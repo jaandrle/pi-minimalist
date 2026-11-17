@@ -1,6 +1,6 @@
 {
   "name": "pi-minimalist",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "Compact one-line tool and thinking rows for Pi's interactive transcript",
   "keywords": [
     "pi-package"
