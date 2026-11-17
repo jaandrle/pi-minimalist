@@ -3,6 +3,7 @@
 import { truncateToWidth, type AutocompleteItem, type Component, type SettingItem, type SettingsList, type SettingsListTheme } from "@earendil-works/pi-tui";
 import {
   BASIC_KEYS,
+  LINGER_SECONDS,
   LOOK_KEYS,
   PARENTS,
   PRESET_NAMES,
@@ -63,7 +64,12 @@ export const FIELDS: Field[] = [
   {
     key: "keepActiveToolsExpanded",
     label: "Show a running tool call",
-    description: "'merged with others' lets a running tool call join a merged row; 'as its own row' keeps it separate so you can watch it.",
+    description: "'merged with others' lets a running tool call join a merged row; 'as its own row' keeps it separate so you can watch it; 'expanded' also shows its output as it arrives, like Ctrl+O.",
+  },
+  {
+    key: "toolLingerSeconds",
+    label: "Keep that view after it ends",
+    description: "How long a finished tool call keeps its running view (own row or expanded) before it folds or collapses. 0 = right away.",
   },
   {
     key: "thinkingAsToolCall",
@@ -73,7 +79,12 @@ export const FIELDS: Field[] = [
   {
     key: "keepActiveThinkingExpanded",
     label: "Expand thinking while generating",
-    description: "Show the full thinking block as it arrives (and for 3s after), instead of collapsed.",
+    description: "Show the full thinking block as it arrives, instead of collapsed.",
+  },
+  {
+    key: "thinkingLingerSeconds",
+    label: "Keep it open after it ends",
+    description: "How long thinking stays expanded after it is generated, so a short thought can be read. 0 = collapse right away.",
   },
   {
     key: "groupToolRuns",
@@ -85,6 +96,11 @@ export const FIELDS: Field[] = [
     key: "foldIntermediateActivity",
     label: "Show only the final reply",
     description: "Show only the latest reply of each turn. Earlier text, thinking and tool calls fold into one summary line.",
+  },
+  {
+    key: "foldEarlierTurnsOnly",
+    label: "Apply only to earlier turns",
+    description: "Keep the current turn fully visible; it folds when you send the next prompt.",
   },
   {
     key: "activitySummary",
@@ -284,18 +300,23 @@ function isBasicKey(id: string): id is BasicKey {
   return (BASIC_KEYS as string[]).includes(id);
 }
 
+const LINGER_CHOICES: [BasicValue, string][] = LINGER_SECONDS.map((seconds) => [seconds, `${seconds}s`]);
+
 /** Stored value and shown text of every non-boolean choice; booleans are on/off. */
 const CHOICE_TEXT: Partial<Record<BasicKey, [BasicValue, string][]>> = {
   preset: PRESET_NAMES.map((name) => [name, presetLabel(name)]),
   glyphStyle: [["unicode", "Unicode"], ["ascii", "ASCII"]],
-  keepActiveToolsExpanded: [[false, "merged with others"], [true, "as its own row"]],
+  keepActiveToolsExpanded: [[false, "merged with others"], [true, "as its own row"], ["expanded", "expanded, like Ctrl+O"]],
+  toolLingerSeconds: LINGER_CHOICES,
+  thinkingLingerSeconds: LINGER_CHOICES,
   activitySummary: [["elapsed", "elapsed time"], ["tools", "tools used"]],
 };
 const ON_OFF: [BasicValue, string][] = [[true, "on"], [false, "off"]];
 const choices = (key: BasicKey) => CHOICE_TEXT[key] ?? ON_OFF;
 
 function displayValue(key: BasicKey, value: BasicValue): string {
-  return choices(key).find(([stored]) => stored === value)?.[1] ?? String(value);
+  // A hand-written number of seconds that is not one of the choices still reads as seconds.
+  return choices(key).find(([stored]) => stored === value)?.[1] ?? (typeof value === "number" ? `${value}s` : String(value));
 }
 
 /** The stored value for a shown text; undefined (write nothing) for a text we never offered. */

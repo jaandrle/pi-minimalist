@@ -29,6 +29,7 @@ import {
   GLYPH_PRESETS,
   FRESH_PRESET,
   LOOK_KEYS,
+  MAX_LINGER_SECONDS,
   PRESETS,
   isFresh,
   isPreset,
@@ -115,6 +116,11 @@ function coerce(raw: unknown, into: Settings): Settings {
       // assignable values more honestly than a second maintained key list.
       (out as Record<string, unknown>)[key] = raw[key];
     }
+  }
+  if (raw.keepActiveToolsExpanded === "expanded") out.keepActiveToolsExpanded = "expanded";
+  for (const key of ["toolLingerSeconds", "thinkingLingerSeconds"] as const) {
+    const value = raw[key];
+    if (typeof value === "number" && value >= 0) out[key] = Math.min(value, MAX_LINGER_SECONDS);
   }
   if (raw.activitySummary === "elapsed" || raw.activitySummary === "tools") {
     out.activitySummary = raw.activitySummary;

@@ -35,8 +35,8 @@ Restart Pi, and tool calls appear as compact rows. No configuration needed.
 Run **`/minimalist`** to change settings live. The settings come in three sections, and a sub-setting shows only while the setting above it is on:
 
 - **Appearance**: the symbol set (Unicode or ASCII), the coloured bar left of each row, and the running time on tool calls.
-- **Compact output blocks into rows**: tool calls and thinking as one-line rows. Under it, choose which tools keep their own card (**Excluded tools**: type to search, press Enter on a tool to flip it), whether a running tool call stays on its own row, and whether thinking is expanded while it is generated.
-- **Merge consecutive rows into one** summary, such as `read ×2, edit ×1`. Under it, **Show only the final reply** keeps the latest reply in focus and folds everything before it into elapsed work time or tool counts.
+- **Compact output blocks into rows**: tool calls and thinking as one-line rows. Under it, choose which tools keep their own card (**Excluded tools**: type to search, press Enter on a tool to flip it), how a running tool call shows (merged with others, on its own row, or expanded like Ctrl+O), and whether thinking is expanded while it is generated. Both can keep that view for a few seconds after they end (3s by default).
+- **Merge consecutive rows into one** summary, such as `read ×2, edit ×1`. Under it, **Show only the final reply** keeps the latest reply in focus and folds everything before it into elapsed work time or tool counts. **Apply only to earlier turns** keeps the current turn fully visible until your next prompt.
 
 When you turn a setting off, the choices under it are kept and come back when you turn it on again.
 

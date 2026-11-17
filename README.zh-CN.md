@@ -37,8 +37,8 @@ pi install npm:pi-minimalist
 运行 **`/minimalist`** 可以实时修改设置。设置分成三个部分;子设置只在它上面的设置打开时才显示:
 
 - **外观**:符号集(Unicode 或 ASCII)、每行左侧的彩色竖条,以及工具调用的运行时间。
-- **Compact output blocks into rows**(把输出块压缩成单行):工具调用和思考内容都显示为单行。在它下面可以选择哪些工具保留自己的卡片(**Excluded tools**:输入关键字搜索,在工具上按 Enter 即可切换)、运行中的工具调用是否单独占一行,以及思考内容在生成时是否展开。
-- **Merge consecutive rows into one**(合并连续的行):合并成一条摘要,例如 `read ×2, edit ×1`。在它下面,**Show only the final reply**(只显示最终回复)让最新的回复保持在视线中心,之前的内容折叠成耗时或工具计数。
+- **Compact output blocks into rows**(把输出块压缩成单行):工具调用和思考内容都显示为单行。在它下面可以选择哪些工具保留自己的卡片(**Excluded tools**:输入关键字搜索,在工具上按 Enter 即可切换)、运行中的工具调用怎样显示(与其他行合并、单独占一行,或像 Ctrl+O 一样展开),以及思考内容在生成时是否展开。两者结束后都可以再保持这个样子几秒(默认 3 秒)。
+- **Merge consecutive rows into one**(合并连续的行):合并成一条摘要,例如 `read ×2, edit ×1`。在它下面,**Show only the final reply**(只显示最终回复)让最新的回复保持在视线中心,之前的内容折叠成耗时或工具计数。**Apply only to earlier turns**(只用于之前的轮次)让当前这一轮完全可见,直到你发出下一个 prompt。
 
 关闭一个设置时,它下面的选择会被保留,再次打开时恢复。
 

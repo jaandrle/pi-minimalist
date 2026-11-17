@@ -109,6 +109,24 @@ describe("loadSettings", () => {
     assert.equal(loadSettings(env).activitySummary, "elapsed");
   });
 
+  it("reads the running-tool choice and the linger seconds, rejecting bad values", () => {
+    const { env, settingsPath } = sandbox();
+    assert.equal(loadSettings(env).keepActiveToolsExpanded, false, "a running tool merges by default, as before");
+    writeFileSync(settingsPath, JSON.stringify({ minimalist: { keepActiveToolsExpanded: "expanded", toolLingerSeconds: 7, thinkingLingerSeconds: 0 } }));
+    const settings = loadSettings(env);
+    assert.equal(settings.keepActiveToolsExpanded, "expanded");
+    assert.equal(settings.toolLingerSeconds, 7);
+    assert.equal(settings.thinkingLingerSeconds, 0);
+    writeFileSync(settingsPath, JSON.stringify({ minimalist: { toolLingerSeconds: 1e9 } }));
+    assert.equal(loadSettings(env).toolLingerSeconds, 60, "a huge value is capped");
+
+    writeFileSync(settingsPath, JSON.stringify({ minimalist: { keepActiveToolsExpanded: "wide", toolLingerSeconds: -1, thinkingLingerSeconds: "3" } }));
+    const bad = loadSettings(env);
+    assert.equal(bad.keepActiveToolsExpanded, false);
+    assert.equal(bad.toolLingerSeconds, 3);
+    assert.equal(bad.thinkingLingerSeconds, 3);
+  });
+
   it("accepts a settings.json containing comments", () => {
     const { env, settingsPath } = sandbox();
     writeFileSync(settingsPath, '{\n  // my preference\n  "minimalist": { "gutter": false }\n}');
@@ -251,6 +269,10 @@ describe("sub-settings", () => {
     assert.equal(config.get("keepActiveThinkingExpanded"), false);
     config.set("thinkingAsToolCall", true);
     assert.equal(config.get("keepActiveThinkingExpanded"), true);
+  });
+
+  it("reads an expanded running tool as off while compact tool calls are off", () => {
+    assert.equal(new Config({ ...DEFAULTS, compactToolRows: false, keepActiveToolsExpanded: "expanded" }).get("keepActiveToolsExpanded"), false);
   });
 
   it("does not touch a non-boolean sub-setting", () => {

@@ -137,7 +137,8 @@ describe("renderCall", () => {
     // always calls getRenderContext(undefined), so lastComponent is never set.
     // Reallocating per render used to register a new 1s ticker each time and
     // clear none of them: an exponential interval leak that froze the UI.
-    const { renderer: r, timers } = renderer();
+    // No linger, so the only timer is the ticker (the linger has its own tests).
+    const { renderer: r, timers } = renderer(testState({ toolLingerSeconds: 0 }));
     const running = makeContext("running");
 
     const first = r.renderCall("goland__execute_tool", {}, widthTheme, running);
@@ -157,7 +158,7 @@ describe("renderCall", () => {
   });
 
   it("stops the ticker when the row reaches a final state", () => {
-    const { renderer: r, timers } = renderer();
+    const { renderer: r, timers } = renderer(testState({ toolLingerSeconds: 0 }));
     const running = makeContext("running");
 
     const line = r.renderCall("bash", { command: "sleep 1" }, theme, running);
@@ -537,5 +538,92 @@ describe("statusGlyph", () => {
     assert.equal(timerBadge(0, config), "", "no badge under one second (avoids 0s flicker)");
     assert.equal(timerBadge(1, config), "[⏱ 1s]");
     assert.equal(timerBadge(7, config), "[⏱ 7s]");
+  });
+});
+
+describe("a running tool call's view", () => {
+  /** Three reads; the middle one runs (live) and then finishes with the given state. */
+  function run(settings: Parameters<typeof testState>[0] = {}) {
+    const state = testState({ groupToolRuns: true, ...settings });
+    const { renderer: r, clock, timers } = renderer(state);
+    const call = (id: string, ui: "running" | "completed", context = makeContext(ui, { toolCallId: id })) =>
+      r.renderCall("read", { path: `${id}.ts` }, widthTheme, context);
+    const first = call("1", "completed");
+    const running = makeContext("running", { toolCallId: "2" });
+    const middle = call("2", "running", running);
+    const last = call("3", "completed");
+    const finish = () => call("2", "completed", { ...makeContext("completed", { toolCallId: "2" }), state: running.state, invalidate: running.invalidate });
+    const visible = () => [first, middle, last].map((row) => row.render(80).map(plain).join("|"));
+    return { r, clock, timers, running, finish, visible };
+  }
+
+  it("keeps a running call on its own row, then folds it after the linger", () => {
+    const { clock, timers, running, finish, visible } = run({ keepActiveToolsExpanded: true });
+    assert.deepEqual(visible(), [" ▌ ✓ read 1.ts", " ▌ • read 2.ts", " ▌ ✓ read 3.ts"]);
+
+    finish();
+    assert.deepEqual(visible(), [" ▌ ✓ read 1.ts", " ▌ ✓ read 2.ts", " ▌ ✓ read 3.ts"], "lingers on its own row");
+    assert.equal(timers.pending(), 1, "one one-shot linger timer");
+
+    clock.advance(3000);
+    timers.fire();
+    assert.equal(running.invalidateCount(), 1, "the timer repaints the row");
+    finish();
+    assert.equal(timers.pending(), 0);
+    assert.deepEqual(visible(), ["", "", " ▌ ✓ read ×3"], "folds once the linger ends");
+  });
+
+  it("folds right away with no linger, and never lingers for replayed history", () => {
+    const { timers, finish, visible } = run({ keepActiveToolsExpanded: true, toolLingerSeconds: 0 });
+    finish();
+    assert.equal(timers.pending(), 0);
+    assert.deepEqual(visible(), ["", "", " ▌ ✓ read ×3"]);
+
+    // Replay: the call was never seen running.
+    const replay = testState({ groupToolRuns: true });
+    const { renderer: r, timers: replayTimers } = renderer(replay);
+    for (const id of ["a", "b"]) r.renderCall("read", { path: id }, widthTheme, makeContext("completed", { toolCallId: id }));
+    assert.equal(replayTimers.pending(), 0);
+    assert.equal(replay.grouping.view("a"), "hide");
+  });
+
+  it("merges a running call when set to 'merged with others'", () => {
+    const { visible } = run({ keepActiveToolsExpanded: false });
+    assert.deepEqual(visible(), ["", "", " ▌ ✓ read ×2 · • read ×1"]);
+  });
+
+  it("expands a running call like Ctrl+O, output included, then collapses it after the linger", () => {
+    const { r, clock, timers, running, finish, visible } = run({ keepActiveToolsExpanded: "expanded" });
+    const native = nativeRenderer(["partial output"]);
+    const output = () =>
+      r.renderResult("read", { content: [] }, { expanded: false, isPartial: true }, theme, running, native.render)!.render(80).map(plain);
+    assert.deepEqual(output(), [" ▌ partial output"], "the output streams in while it runs");
+    assert.equal(visible()[1], " ▌ • read 2.ts");
+
+    finish();
+    assert.deepEqual(output(), [" ▌ partial output"], "still open during the linger");
+    clock.advance(3000);
+    timers.fire();
+    finish();
+    assert.deepEqual(output(), [], "collapsed once the linger ends");
+    assert.deepEqual(visible(), ["", "", " ▌ ✓ read ×3"]);
+  });
+
+  it("lets the native renderer see the final result once, so it can stop its own timer", () => {
+    // Pi's bash renderer starts a 1s interval on context.state for a running
+    // result and clears it only when it renders the final one.
+    const { r, running, finish } = run({ keepActiveToolsExpanded: "expanded", toolLingerSeconds: 0 });
+    const seen: boolean[] = [];
+    const native = (_result: any, options: any) => {
+      seen.push(options.isPartial);
+      return { render: () => ["out"], invalidate() {} };
+    };
+    r.renderResult("bash", { content: [] }, { expanded: false, isPartial: true }, theme, running, native);
+    finish();
+    const final = r.renderResult("bash", { content: [] }, { expanded: false, isPartial: false }, theme, running, native);
+    assert.deepEqual(final!.render(80), [], "collapsed: no output");
+    assert.deepEqual(seen, [true, false], "the native renderer saw the final result");
+    r.renderResult("bash", { content: [] }, { expanded: false, isPartial: false }, theme, running, native);
+    assert.deepEqual(seen, [true, false], "only once");
   });
 });

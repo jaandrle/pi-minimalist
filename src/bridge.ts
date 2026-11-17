@@ -16,7 +16,7 @@ import { RunGrouping } from "./run-grouping.ts";
 import { Painter, type Row, type ThemeLike } from "./row.ts";
 import { createToolRenderer, type ToolRenderer } from "./tool-renderer.ts";
 import { createThinkingPreview, singleHueThinkingTheme, type ThinkingPreview } from "./thinking.ts";
-import { realTimers, type Timers } from "./components.ts";
+import { once, realTimers, type Timers } from "./components.ts";
 
 export const BRIDGE_SYMBOLS = {
   /** The `Bridge` object: everything the prototype wrappers call. */
@@ -43,10 +43,11 @@ export type Bridge = {
   /** Keep a STREAMING thinking block expanded. */
   keepActiveThinkingExpanded: () => boolean;
   /**
-   * Run `callback` once, `THINKING_LINGER_MS` after a streamed message ends,
+   * Run `callback` once, `thinkingLingerSeconds` after a streamed message ends,
    * then repaint. Keeps a short thought on screen long enough to be read.
+   * Returns false (and schedules nothing) when the setting is 0.
    */
-  afterThinkingLinger: (callback: () => void) => void;
+  afterThinkingLinger: (callback: () => void) => boolean;
 
   /** Chronology hooks that keep thinking and prose in transcript order. */
   observeThinking: (owner: object, runIndex: number, streaming: boolean, hidden: boolean, timestamp?: number) => string;
@@ -112,9 +113,6 @@ export type InstallOptions = SharedState & {
   requestRender?: () => void;
 };
 
-/** How long expanded thinking stays open after its message stops streaming. */
-export const THINKING_LINGER_MS = 3000;
-
 /**
  * Install the bridge.
  *
@@ -133,12 +131,13 @@ export function installBridges({ config, grouping, timers = realTimers, requestR
     compactThinking: () => config.get("thinkingAsToolCall") === true,
     keepActiveThinkingExpanded: () => config.get("keepActiveThinkingExpanded"),
     afterThinkingLinger: (callback) => {
-      // Timers only has intervals; clearing on the first tick makes it one-shot.
-      const handle = timers.setInterval(() => {
-        timers.clearInterval(handle);
+      const seconds = config.get("thinkingLingerSeconds");
+      if (seconds <= 0) return false;
+      once(timers, seconds * 1000, () => {
         callback();
         requestRender?.();
-      }, THINKING_LINGER_MS);
+      });
+      return true;
     },
 
     // Chronology: core walks message content in transcript order, and run

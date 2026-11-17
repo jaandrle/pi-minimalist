@@ -93,7 +93,7 @@ describe("config screen contents", () => {
     const byId = new Map(rendered.map((item) => [item.id, item]));
     assert.equal(byId.get("groupToolRuns")?.currentValue, "on");
     assert.equal(byId.get("timer")?.currentValue, "off");
-    for (const item of rendered.filter((item) => !["preset", "activitySummary", "glyphStyle", "keepActiveToolsExpanded"].includes(item.id))) {
+    for (const item of rendered.filter((item) => !["preset", "activitySummary", "glyphStyle", "keepActiveToolsExpanded", "toolLingerSeconds"].includes(item.id))) {
       assert.deepEqual(item.values, ["on", "off"]);
     }
   });
@@ -139,12 +139,14 @@ describe("config screen contents", () => {
   });
 
   it("orders the rows in sections: preset, appearance, compact rows, merging", () => {
-    const ids = items({ ...DEFAULTS, thinkingAsToolCall: true, foldIntermediateActivity: true }).map((item) => item.id);
+    const ids = items({ ...DEFAULTS, keepActiveToolsExpanded: true, thinkingAsToolCall: true, keepActiveThinkingExpanded: true, foldIntermediateActivity: true }).map((item) => item.id);
     assert.deepEqual(ids, [
       "preset",
       "glyphStyle", "gutter", "timer",
-      "compactRows", "compactToolRows", "keepActiveToolsExpanded", "thinkingAsToolCall", "keepActiveThinkingExpanded",
-      "groupToolRuns", "foldIntermediateActivity", "activitySummary",
+      "compactRows",
+      "compactToolRows", "keepActiveToolsExpanded", "toolLingerSeconds",
+      "thinkingAsToolCall", "keepActiveThinkingExpanded", "thinkingLingerSeconds",
+      "groupToolRuns", "foldIntermediateActivity", "foldEarlierTurnsOnly", "activitySummary",
     ]);
   });
 
@@ -214,6 +216,22 @@ describe("config screen contents", () => {
     screen(config, (k, v) => changes.push([k, v])).onChange("preset", "nonsense");
     assert.deepEqual(changes, [], "a text we never offered writes nothing");
     assert.equal(config.all().preset, "full");
+  });
+
+  it("offers the three running-tool views and the linger seconds", () => {
+    const byId = new Map(items({ ...DEFAULTS, keepActiveToolsExpanded: "expanded", thinkingAsToolCall: true, keepActiveThinkingExpanded: true }).map((item) => [item.id, item]));
+    assert.deepEqual(byId.get("keepActiveToolsExpanded")?.values, ["merged with others", "as its own row", "expanded, like Ctrl+O"]);
+    assert.equal(byId.get("keepActiveToolsExpanded")?.currentValue, "expanded, like Ctrl+O");
+    assert.deepEqual(byId.get("toolLingerSeconds")?.values, ["0s", "1s", "2s", "3s", "5s", "10s"]);
+    assert.equal(byId.get("thinkingLingerSeconds")?.currentValue, "3s");
+    assert.equal(items({ ...DEFAULTS, keepActiveToolsExpanded: true, toolLingerSeconds: 7 }).find((item) => item.id === "toolLingerSeconds")?.currentValue, "7s");
+    assert.equal(items({ ...DEFAULTS, keepActiveToolsExpanded: false }).some((item) => item.id === "toolLingerSeconds"), false);
+
+    const changes: [string, unknown][] = [];
+    const list = screen(new Config(DEFAULTS), (key, value) => changes.push([key, value]));
+    list.onChange("keepActiveToolsExpanded", "expanded, like Ctrl+O");
+    list.onChange("toolLingerSeconds", "10s");
+    assert.deepEqual(changes, [["keepActiveToolsExpanded", "expanded"], ["toolLingerSeconds", 10]]);
   });
 
   it("shows every visible row without scrolling", () => {
@@ -368,7 +386,8 @@ describe("config screen behaviour", () => {
 describe("summary", () => {
   it("lists every visible setting with its state and where to find the rest", () => {
     const text = summary({ ...DEFAULTS, groupToolRuns: true });
-    for (const field of FIELDS.filter((field) => !["keepActiveThinkingExpanded", "activitySummary"].includes(field.key))) {
+    const hidden = ["toolLingerSeconds", "keepActiveThinkingExpanded", "thinkingLingerSeconds", "foldEarlierTurnsOnly", "activitySummary"];
+    for (const field of FIELDS.filter((field) => !hidden.includes(field.key))) {
       assert.ok(text.includes(field.label), field.key);
     }
     assert.ok(!text.includes("Summary of the hidden part"), "a hidden sub-setting is not listed");

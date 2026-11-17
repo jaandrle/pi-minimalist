@@ -57,7 +57,7 @@ describe("run grouping", () => {
   });
 
   it("folds failures and RUNNING rows, but stops at an expanded row", () => {
-    const grouping = grouped();
+    const grouping = grouped({ keepActiveToolsExpanded: false });
     observe(grouping, "read-1", "read");
     observe(grouping, "generic", "goland__execute_tool");
     observe(grouping, "failed", "read", "failure");
@@ -67,8 +67,8 @@ describe("run grouping", () => {
     observe(grouping, "find", "find");
     observe(grouping, "ls", "ls");
 
-    // A running row folds by DEFAULT: folds are recomputed every render, so it
-    // reappears the moment it matters, and the summary still counts it.
+    // A running row folds when configured: folds are recomputed every render, so
+    // it reappears the moment it matters, and the summary still counts it.
     for (const id of ["read-1", "generic", "failed", "pending"]) {
       assert.equal(grouping.view(id), "hide", id);
     }
@@ -96,6 +96,15 @@ describe("run grouping", () => {
     assert.equal(grouping.view("pending"), "show");
     assert.equal(grouping.view("find"), "hide");
     assert.deepEqual(grouping.view("ls"), summary({ done: ["find", "ls"] }));
+  });
+
+  it("keeps only TOOL calls out of folds while running, not streaming thinking", () => {
+    const grouping = grouped({ thinkingAsToolCall: true, keepActiveToolsExpanded: true });
+    const owner = {};
+    observe(grouping, "a", "read");
+    grouping.observeThinking(owner, 0, false, false);
+    observe(grouping, "b", "read");
+    assert.equal(grouping.view(grouping.thinkingId(owner, 0)), "hide", "streaming thinking still folds");
   });
 
   it("unifies completed thinking and tool rows in transcript order", () => {
@@ -201,6 +210,23 @@ describe("run grouping", () => {
     assert.ok(checks > firstRenderChecks, "an outcome change must invalidate the views");
   });
 
+  it("with foldEarlierTurnsOnly, keeps the latest turn open until the next prompt", () => {
+    const grouping = grouped({ foldIntermediateActivity: true, foldEarlierTurnsOnly: true });
+    const turn = (prefix: string) => {
+      grouping.agentStarted(0);
+      grouping.observeProse({}, 0);
+      observe(grouping, `${prefix}-a`, "read");
+      grouping.observeProse({}, 0);
+      grouping.agentSettled(1);
+    };
+    turn("first");
+    assert.equal(grouping.isActivitySummary("first-a"), false, "the latest turn stays fully visible");
+
+    turn("second");
+    assert.equal(grouping.isActivitySummary("first-a"), true, "a new turn folds the previous one");
+    assert.equal(grouping.isActivitySummary("second-a"), false);
+  });
+
   it("opens a clicked activity summary into separate rows for good", () => {
     const grouping = grouped({ foldIntermediateActivity: true, groupToolRuns: true });
     grouping.agentStarted(0);
@@ -226,7 +252,8 @@ describe("re-folding an opened run", () => {
     grouping.rowFor(id, p, base(id));
 
   function openRun(settings: Partial<Settings> = {}): RunGrouping {
-    const grouping = grouped(settings);
+    // The running member must be foldable, so it joins the run.
+    const grouping = grouped({ keepActiveToolsExpanded: false, ...settings });
     observe(grouping, "a", "read");
     observe(grouping, "b", "edit", "pending");
     observe(grouping, "c", "read");

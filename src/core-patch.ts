@@ -265,7 +265,7 @@ function isMouseRegion(value: any): boolean {
  *    click handler stores into the LIVE map, so an explicit Ctrl+T expansion
  *    always survives — the default only decides what happens when the user has
  *    not expressed a preference. When a streamed message ends, the forced
- *    expansion LINGERS for `THINKING_LINGER_MS`, then the message re-renders
+ *    expansion LINGERS for `thinkingLingerSeconds`, then the message re-renders
  *    collapsed: a one-phrase thought would otherwise vanish before it is read.
  *    Replayed history never streamed, so it never lingers.
  *  - collapsed preview: swap the hidden run's `Text` for our compact line.
@@ -297,11 +297,11 @@ export function patchAssistantMessage(proto: AssistantProto): void {
       const keepOpen = b?.keepActiveThinkingExpanded() === true;
       if (isStreaming) streamed.add(this);
       else if (streamed.delete(this) && keepOpen && b) {
-        lingering.add(this);
-        b.afterThinkingLinger(() => {
+        const scheduled = b.afterThinkingLinger(() => {
           lingering.delete(this);
           if (this.lastMessage) this.updateContent(this.lastMessage, false);
         });
+        if (scheduled) lingering.add(this);
       }
       // Default: a streaming block stays collapsed to its compact preview, which
       // already shows the newest text. Opt in to force it open instead.

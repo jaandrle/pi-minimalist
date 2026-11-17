@@ -15,7 +15,7 @@
 
 import type { Component } from "@earendil-works/pi-tui";
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
-import { CompactLine, EmptyComponent, GutteredComponent, realTimers, type Timers } from "./components.ts";
+import { CompactLine, EmptyComponent, GutteredComponent, once, realTimers, type Timers } from "./components.ts";
 import { Painter, type ThemeLike } from "./row.ts";
 import { describeTool, isBuiltIn, summaryName } from "./tools.ts";
 import { RunGrouping, type Outcome } from "./run-grouping.ts";
@@ -39,6 +39,17 @@ export type RenderState = {
   callLine?: unknown;
   /** Wall-clock timestamp (ms) of the first render after execution started. */
   startedAt?: number;
+  /**
+   * Set once, on the first finished render of a call seen RUNNING in this
+   * session: true until its linger timer fires. Replayed history never sets it.
+   */
+  lingering?: boolean;
+  /**
+   * Set by renderCall, which core runs before renderResult in the same
+   * updateDisplay: show the result expanded without Ctrl+O while the call runs
+   * or lingers in `"expanded"` mode.
+   */
+  forceExpanded?: boolean;
 };
 
 /** The render context fields this module reads. Pi's real context has more. */
@@ -170,9 +181,15 @@ export function createToolRenderer(deps: RendererDeps): ToolRenderer {
       if (status.elapsed !== undefined) component.startTicker(() => context.invalidate());
       else component.stopTicker();
 
+      // A running call keeps its own row (or opens like Ctrl+O), and keeps that
+      // view for `toolLingerSeconds` after it ends; see `lingers()`.
+      const lingering = lingers(context, status, config, timers);
+      context.state.forceExpanded =
+        (status.outcome === "pending" || lingering) && config.get("keepActiveToolsExpanded") === "expanded";
+
       // Painted at render time, because the detail budget depends on the real
       // viewport width and TUI only reveals it during render().
-      const expanded = context.expanded === true;
+      const expanded = context.expanded === true || context.state.forceExpanded;
       const paint = (width: number) => {
         const painter = new Painter(theme, config);
         const badge = timerBadge(status.elapsed, config);
@@ -204,7 +221,7 @@ export function createToolRenderer(deps: RendererDeps): ToolRenderer {
         component.setRow(paint);
         return component;
       }
-      grouping.observe(id, summaryName(name, args), status.outcome, expanded);
+      grouping.observe(id, summaryName(name, args), status.outcome, expanded, true, "tool", lingering);
       component.setRow(
         (width) => grouping.rowFor(id, new Painter(theme, config), () => paint(width)),
         (onHeader) => grouping.click(id, onHeader),
@@ -214,7 +231,17 @@ export function createToolRenderer(deps: RendererDeps): ToolRenderer {
 
     renderResult(name, result, options, theme: ThemeLike, context, nativeRenderer) {
       // The call row already carries status, so a collapsed result adds no height.
-      if (!options.expanded) return new EmptyComponent();
+      const state = context.state as RenderState;
+      const expanded = options.expanded || state.forceExpanded === true;
+      if (!expanded) {
+        // A native renderer that drew a RUNNING result (bash: its own 1s timer
+        // on context.state) only stops that timer when it sees the final result.
+        if (!options.isPartial && state.originalResult !== undefined && nativeRenderer) {
+          nativeRenderer(result, options, theme, { ...context, lastComponent: state.originalResult });
+          state.originalResult = undefined;
+        }
+        return new EmptyComponent();
+      }
 
       // A rendererless third-party tool has no native output to preserve;
       // `undefined` tells core's fallback path to show its own text output.
@@ -222,8 +249,7 @@ export function createToolRenderer(deps: RendererDeps): ToolRenderer {
 
       // Expanded rows delegate to the tool's ORIGINAL renderer, preserving diffs,
       // syntax highlighting and MCP result formatting.
-      const state = context.state as RenderState;
-      const component = nativeRenderer(result, options, theme, {
+      const component = nativeRenderer(result, { ...options, expanded }, theme, {
         // Replace only lastComponent: the native renderer must see ITS component,
         // not our gutter wrapper.
         ...context,
@@ -239,6 +265,31 @@ export function createToolRenderer(deps: RendererDeps): ToolRenderer {
       return wrapper;
     },
   };
+}
+
+/**
+ * True while a call that finished in THIS session keeps its running view.
+ *
+ * Only a call seen running lingers (`startedAt` is set on its first running
+ * render), so replayed history never does. The first finished render decides,
+ * and starts a one-shot timer that ends the linger; its async `invalidate()`
+ * re-runs this renderer, so the row folds. The setting itself is read again at
+ * render time (`keptActive`), so turning it off mid-linger applies at once.
+ */
+function lingers(context: CallContext & { invalidate(): void }, status: Status, config: Config, timers: Timers): boolean {
+  const state = context.state;
+  if (status.outcome === "pending" || state.startedAt === undefined) return false;
+  if (state.lingering === undefined) {
+    const lingerMs = config.get("toolLingerSeconds") * 1000;
+    state.lingering = lingerMs > 0 && config.get("keepActiveToolsExpanded") !== false;
+    if (state.lingering) {
+      once(timers, lingerMs, () => {
+        state.lingering = false;
+        context.invalidate();
+      });
+    }
+  }
+  return state.lingering;
 }
 
 /**

@@ -19,6 +19,14 @@ export type Timers = {
   clearInterval: (handle: unknown) => void;
 };
 
+/** Run `callback` once after `ms`. Timers only has intervals, so the first tick clears its own. */
+export function once(timers: Timers, ms: number, callback: () => void): void {
+  const handle = timers.setInterval(() => {
+    timers.clearInterval(handle);
+    callback();
+  }, ms);
+}
+
 export const realTimers: Timers = {
   setInterval: (callback, ms) => {
     const handle = setInterval(callback, ms);

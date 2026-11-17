@@ -81,6 +81,18 @@ export const DEFAULT_TOKENS: Tokens = {
 /** Settings `/minimalist` can edit: visible effect, no vocabulary needed. */
 export type ActivitySummary = "elapsed" | "tools";
 
+/**
+ * How a RUNNING tool call shows. The values keep the old boolean key:
+ * `false` = merged into a run, `true` = on its own row, `"expanded"` = its own
+ * row opened like Ctrl+O, output included.
+ */
+export type RunningToolView = boolean | "expanded";
+
+/** Choices for the "keep it after it ends" settings, in seconds. */
+export const LINGER_SECONDS = [0, 1, 2, 3, 5, 10] as const;
+/** Upper bound for a hand-written linger, far below setInterval's limit. */
+export const MAX_LINGER_SECONDS = 60;
+
 export const PRESET_NAMES = ["off", "lite", "full", "max", "custom"] as const;
 export type Preset = (typeof PRESET_NAMES)[number];
 
@@ -117,6 +129,8 @@ export type BasicSettings = {
   groupToolRuns: boolean;
   /** Replace all but the latest assistant prose block with one summary row. */
   foldIntermediateActivity: boolean;
+  /** Fold only turns before the latest one, so the current turn stays fully visible. */
+  foldEarlierTurnsOnly: boolean;
   /** What replaces the activity hidden before the latest prose block. */
   activitySummary: ActivitySummary;
   /** Draw the left gutter bar. */
@@ -125,10 +139,14 @@ export type BasicSettings = {
   timer: boolean;
   /** Render collapsed thinking like a tool row. Off restores Pi's native thinking. */
   thinkingAsToolCall: boolean;
-  /** Keep a RUNNING tool out of a fold so its progress stays visible. */
-  keepActiveToolsExpanded: boolean;
+  /** See `RunningToolView`. The name predates the three values and is kept for settings.json. */
+  keepActiveToolsExpanded: RunningToolView;
+  /** Seconds a finished tool keeps its running view (own row or expanded). */
+  toolLingerSeconds: number;
   /** Keep a STREAMING thinking block expanded instead of collapsed. */
   keepActiveThinkingExpanded: boolean;
+  /** Seconds streamed thinking stays expanded after it ends. */
+  thinkingLingerSeconds: number;
   /** Choose ordinary Unicode symbols or a one-column ASCII fallback. */
   glyphStyle: GlyphStyle;
 };
@@ -149,12 +167,15 @@ export const DEFAULT_BASIC: BasicSettings = {
   compactToolRows: true,
   groupToolRuns: true,
   foldIntermediateActivity: false,
+  foldEarlierTurnsOnly: false,
   activitySummary: "elapsed",
   gutter: true,
   timer: true,
   thinkingAsToolCall: false,
   keepActiveToolsExpanded: false,
+  toolLingerSeconds: 3,
   keepActiveThinkingExpanded: false,
+  thinkingLingerSeconds: 3,
   glyphStyle: "unicode",
 };
 
@@ -171,16 +192,19 @@ export const PRESETS: Record<Exclude<Preset, "custom">, Record<LookKey, boolean>
 
 /**
  * The setting each sub-setting depends on. `/minimalist` shows a sub-setting
- * only while its parent is on, and `Config` reads a boolean sub-setting as off
+ * only while its parent is on, and `Config` reads an on/off sub-setting as off
  * while its parent is off. The user's own value is kept and comes back with
  * the parent. Parents are listed before their children.
  */
 export const PARENTS: Partial<Record<BasicKey, BasicKey>> = {
   compactToolRows: "compactRows",
   keepActiveToolsExpanded: "compactToolRows",
+  toolLingerSeconds: "keepActiveToolsExpanded",
   thinkingAsToolCall: "compactRows",
   keepActiveThinkingExpanded: "thinkingAsToolCall",
+  thinkingLingerSeconds: "keepActiveThinkingExpanded",
   foldIntermediateActivity: "groupToolRuns",
+  foldEarlierTurnsOnly: "foldIntermediateActivity",
   activitySummary: "foldIntermediateActivity",
 };
 
@@ -216,12 +240,12 @@ export const EDITABLE_KEYS = [...BASIC_KEYS, "excludeTools"] as (keyof EditableS
 
 /**
  * defaults < the user's own keys < the preset's look keys (none for `custom`),
- * then every boolean sub-setting of an off parent reads as off.
+ * then every on/off sub-setting of an off parent reads as off.
  */
 function layer(user: Settings): Settings {
   const view = user.preset === "custom" ? { ...user } : { ...user, ...PRESETS[user.preset] };
   for (const [child, parent] of Object.entries(PARENTS) as [BasicKey, BasicKey][]) {
-    if (!view[parent] && typeof view[child] === "boolean") (view as Record<string, unknown>)[child] = false;
+    if (!view[parent] && typeof DEFAULT_BASIC[child] === "boolean") (view as Record<string, unknown>)[child] = false;
   }
   return view;
 }

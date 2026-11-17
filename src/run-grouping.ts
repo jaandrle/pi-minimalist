@@ -29,6 +29,8 @@ type Entry = {
   expanded: boolean;
   /** False for rows that are never folded, e.g. assistant prose. */
   foldable: boolean;
+  /** A tool call that just finished and keeps its running view for a few seconds (`toolLingerSeconds`). */
+  lingering: boolean;
 };
 
 type Cycle = { startedAt: number; settledAt?: number };
@@ -94,10 +96,11 @@ export class RunGrouping {
     expanded: boolean,
     foldable = true,
     kind: EntryKind = "tool",
+    lingering = false,
   ): void {
     const existing = this.byId.get(id);
     if (!existing) {
-      const entry: Entry = { id, name, outcome, kind, cycle: this.cycle, expanded, foldable };
+      const entry: Entry = { id, name, outcome, kind, cycle: this.cycle, expanded, foldable, lingering };
       this.byId.set(id, entry);
       this.entries.push(entry);
       this.invalidateViews();
@@ -108,13 +111,15 @@ export class RunGrouping {
       existing.outcome === outcome &&
       existing.expanded === expanded &&
       existing.foldable === foldable &&
-      existing.kind === kind
+      existing.kind === kind &&
+      existing.lingering === lingering
     ) return;
     existing.name = name;
     existing.outcome = outcome;
     existing.expanded = expanded;
     existing.foldable = foldable;
     existing.kind = kind;
+    existing.lingering = lingering;
     this.invalidateViews();
   }
 
@@ -315,6 +320,7 @@ export class RunGrouping {
       this.config.get("thinkingAsToolCall"),
       this.config.get("foldIntermediateActivity"),
       this.config.get("keepActiveToolsExpanded"),
+      this.config.get("foldEarlierTurnsOnly"),
     ].join(":");
     if (this.cache?.key === key) return this.cache;
 
@@ -350,7 +356,11 @@ export class RunGrouping {
         entries.push(entry);
         byCycle.set(entry.cycle, entries);
       }
+      // With `foldEarlierTurnsOnly`, the latest turn (the newest cycle that has
+      // entries) stays open until the next prompt's first row starts a new one.
+      const latest = this.config.get("foldEarlierTurnsOnly") ? Math.max(...byCycle.keys()) : undefined;
       for (const [cycleId, entries] of byCycle) {
+        if (cycleId === latest) continue;
         const prose = entries.filter((entry) => entry.kind === "prose");
         if (prose.length < 2) continue;
 
@@ -379,17 +389,21 @@ export class RunGrouping {
   private activityFoldable(entry: Entry): boolean {
     if (entry.kind === "other") return false;
     if (entry.expanded || this.opened.has(entry.id)) return false;
-    if (entry.outcome === "pending" && entry.kind !== "prose" && this.config.get("keepActiveToolsExpanded")) {
-      return false;
-    }
+    if (this.keptActive(entry)) return false;
     return true;
   }
 
   private foldable(entry: Entry | undefined): boolean {
     if (!entry?.foldable || entry.expanded || this.opened.has(entry.id)) return false;
     if (entry.kind === "thinking" && !this.config.get("thinkingAsToolCall")) return false;
-    if (entry.outcome === "pending" && this.config.get("keepActiveToolsExpanded")) return false;
+    if (this.keptActive(entry)) return false;
     return true;
+  }
+
+  /** A running (or just-finished, lingering) TOOL call that `keepActiveToolsExpanded` keeps out of folds. */
+  private keptActive(entry: Entry): boolean {
+    if (entry.kind !== "tool") return false;
+    return (entry.outcome === "pending" || entry.lingering) && this.config.get("keepActiveToolsExpanded") !== false;
   }
 
   private rememberOwnerEntry(owner: object, entryId: string): void {

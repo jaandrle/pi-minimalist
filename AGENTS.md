@@ -23,11 +23,14 @@ at load time.
 | Preset: off, lite, full, max, custom (a layer over five look keys) | full (fresh install) / custom (existing config) | `preset` |
 | Master switch for one-line rows (tools AND thinking) | on | `compactRows` |
 | One-line tool rows, output hidden until `Ctrl+O` | on | `compactToolRows` |
-| Keep a running tool out of a fold | off | `keepActiveToolsExpanded` |
+| A running tool: merged (`false`), own row (`true`), or expanded like Ctrl+O (`"expanded"`) | merged | `keepActiveToolsExpanded` |
+| Seconds a finished tool keeps that view | 3 | `toolLingerSeconds` |
 | Collapsed thinking rendered like a tool row | off | `thinkingAsToolCall` |
-| Keep streaming thinking expanded (+3s after it ends) | off | `keepActiveThinkingExpanded` |
+| Keep streaming thinking expanded | off | `keepActiveThinkingExpanded` |
+| Seconds streamed thinking stays expanded after it ends | 3 | `thinkingLingerSeconds` |
 | Fold adjacent finished rows into one summary | on | `groupToolRuns` |
 | Fold activity before the latest assistant prose into one summary | off | `foldIntermediateActivity` |
+| Fold only turns before the latest one | off | `foldEarlierTurnsOnly` |
 | Folded activity replacement | elapsed time | `activitySummary` |
 | Left gutter bar | on | `gutter` |
 | Elapsed timer on running tools | on | `timer` |
@@ -52,16 +55,16 @@ are ignored, because `coerce` reads only known keys.
 "minimalist": {
   "preset": "custom", "compactRows": true,
   "compactToolRows": true, "groupToolRuns": true, "foldIntermediateActivity": false,
-  "activitySummary": "elapsed", "gutter": true, "timer": true,
-  "thinkingAsToolCall": false, "keepActiveToolsExpanded": false,
-  "keepActiveThinkingExpanded": false, "glyphStyle": "unicode",
+  "foldEarlierTurnsOnly": false, "activitySummary": "elapsed", "gutter": true, "timer": true,
+  "thinkingAsToolCall": false, "keepActiveToolsExpanded": false, "toolLingerSeconds": 3,
+  "keepActiveThinkingExpanded": false, "thinkingLingerSeconds": 3, "glyphStyle": "unicode",
 
   "excludeTools": [], "glyphs": {}, "tokens": {}
 }
 ```
 
 `/minimalist` (alias `config`) opens an editor on pi-tui's `SettingsList`;
-`/minimalist status` prints the state. The twelve keys above the blank line are
+`/minimalist status` prints the state. The keys above the blank line are
 in the editor, in `FIELDS` order and in sections (preset, appearance, compact
 rows, merging); a blank line drawn above each `section` row separates them.
 `SettingsList` has no separator rows, so `createConfigScreen` inserts the blank
@@ -72,7 +75,8 @@ line is ignored). The picker submenu gets no blank lines.
 on. The editor indents a sub-setting one step per level and shows it only while
 every parent above it is on; it rebuilds the list after every change. `Config`
 reads a BOOLEAN sub-setting as off while its parent is off (`layer()`), so
-hiding a row also disables it, but the user's own value stays stored and comes
+hiding a row also disables it (`keepActiveToolsExpanded` too: its default is a
+boolean), but the user's own value stays stored and comes
 back with the parent. A setting goes into `PARENTS` only when it is useless
 without its parent: `keepActiveThinkingExpanded` hangs off `thinkingAsToolCall`
 (off = Pi's native thinking, which Ctrl+T controls).
@@ -332,12 +336,23 @@ last three drive Pi's real `Container.handleMouse`); `run-grouping.test.ts`
 ### Streamed thinking lingers open; repaint goes through a hidden widget
 
 With `keepActiveThinkingExpanded`, a message that WAS streamed stays expanded
-for `THINKING_LINGER_MS` (3s) after its final `updateContent(_, false)`, then a
+for `thinkingLingerSeconds` (3s by default, 0 = no linger) after its final `updateContent(_, false)`, then a
 one-shot timer re-runs `updateContent` and repaints. Replayed history never
 streamed, so it never lingers. Extensions get no TUI handle outside a factory,
 so `index.ts` registers a zero-line `belowEditor` widget only to capture
 `tui.requestRender`. → `core-patch.test.ts` "expands a STREAMING thinking block
 when configured…", "never lingers for replayed history or when not configured".
+
+### A finished tool lingers only if it was seen running
+
+`keepActiveToolsExpanded` keeps a running tool out of folds (`true`) or also
+expands it like Ctrl+O (`"expanded"`: `RenderState.forceExpanded`, read by
+`renderResult`). `toolLingerSeconds` keeps that view after the call ends. Only a
+call whose `startedAt` is set (rendered while running in this session) lingers,
+so replay never does. Its first finished render stores `finishedAt` and starts a
+one-shot timer whose async `context.invalidate()` re-runs `renderCall`; the
+entry's `lingering` flag then flips and invalidates the fold views. →
+`tool-renderer.test.ts` "a running tool call's view".
 
 ### Do not call runtime actions during extension load
 

@@ -370,6 +370,20 @@ describe("runtime core patches against real Pi components", { skip: PI_ROOT ? fa
     assert.equal(component.hideThinkingBlock, true);
   });
 
+  it("collapses streamed thinking right away when the linger is 0s", async () => {
+    const { components, newAssistant } = await loadPi();
+    const settings = { thinkingAsToolCall: true, keepActiveThinkingExpanded: true, thinkingLingerSeconds: 0 };
+    const shared = install(components, settings, "assistant");
+    const timers = fakeTimers();
+    installBridges({ ...shared, timers });
+    const message = assistantMessage([{ type: "thinking", thinking: "short thought" }]);
+    const component = newAssistant(message);
+    component.updateContent(message, true);
+    component.updateContent(message, false);
+    assert.equal(timers.pending(), 0);
+    assert.ok(textOf(component).includes("✓ think short thought"));
+  });
+
   it("never lingers for replayed history or when not configured", async () => {
     const { components, newAssistant } = await loadPi();
     for (const keepActiveThinkingExpanded of [true, false]) {
@@ -1073,7 +1087,8 @@ describe("runtime core patches against real Pi components", { skip: PI_ROOT ? fa
 
   it("stops a running compact row's ticker when switching to Pi's renderer", async () => {
     const { components, newTool, builtIn } = await loadPi();
-    const shared = state();
+    // No linger, so the only timer is the ticker.
+    const shared = state({ toolLingerSeconds: 0 });
     const timers = fakeTimers();
     installBridges({ ...shared, timers });
     patchToolExecution(components.ToolExecutionComponent.prototype);
