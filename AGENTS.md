@@ -20,16 +20,17 @@ at load time.
 
 | Feature | Default | Setting |
 | --- | --- | --- |
-| Preset: off, lite, full, max, custom (a layer over four look keys) | full (fresh install) / custom (existing config) | `preset` |
+| Preset: off, lite, full, max, custom (a layer over five look keys) | full (fresh install) / custom (existing config) | `preset` |
+| Master switch for one-line rows (tools AND thinking) | on | `compactRows` |
 | One-line tool rows, output hidden until `Ctrl+O` | on | `compactToolRows` |
+| Keep a running tool out of a fold | off | `keepActiveToolsExpanded` |
+| Collapsed thinking rendered like a tool row | off | `thinkingAsToolCall` |
+| Keep streaming thinking expanded (+3s after it ends) | off | `keepActiveThinkingExpanded` |
 | Fold adjacent finished rows into one summary | on | `groupToolRuns` |
 | Fold activity before the latest assistant prose into one summary | off | `foldIntermediateActivity` |
 | Folded activity replacement | elapsed time | `activitySummary` |
 | Left gutter bar | on | `gutter` |
 | Elapsed timer on running tools | on | `timer` |
-| Collapsed thinking rendered like a tool row | off | `thinkingAsToolCall` |
-| Keep a running tool out of a fold | off | `keepActiveToolsExpanded` |
-| Keep streaming thinking expanded (+3s after it ends) | off | `keepActiveThinkingExpanded` |
 
 `pi-markdown-chrome` (code-block corners, blockquote gutter) is a separate
 extension. Do not reintroduce it here.
@@ -49,7 +50,7 @@ are ignored, because `coerce` reads only known keys.
 
 ```json
 "minimalist": {
-  "preset": "custom",
+  "preset": "custom", "compactRows": true,
   "compactToolRows": true, "groupToolRuns": true, "foldIntermediateActivity": false,
   "activitySummary": "elapsed", "gutter": true, "timer": true,
   "thinkingAsToolCall": false, "keepActiveToolsExpanded": false,
@@ -60,32 +61,47 @@ are ignored, because `coerce` reads only known keys.
 ```
 
 `/minimalist` (alias `config`) opens an editor on pi-tui's `SettingsList`;
-`/minimalist status` prints the state. The eleven keys above the blank line are
-in the editor; `activitySummary` shows only while `foldIntermediateActivity` is
-on. A twelfth row, "Excluded tools", opens a submenu (a second `SettingsList` with
-`enableSearch`) listing every tool from `pi.getAllTools()`, read when it opens;
-Enter flips a tool between `compact` and `excluded`. Names in `excludeTools` that no
-loaded tool carries stay listed, so opening the picker never forgets them. `glyphs`
-and `tokens` are JSON-only: they need knowledge of Pi's palette. Default symbols are plain Unicode (no Nerd
-Font); `glyphStyle: "ascii"` uses one-column symbols only.
+`/minimalist status` prints the state. The twelve keys above the blank line are
+in the editor, in `FIELDS` order and in sections (preset, appearance, compact
+rows, merging); a blank line drawn above each `section` row separates them.
+`SettingsList` has no separator rows, so `createConfigScreen` inserts the blank
+lines after rendering and moves mouse `y` back past them (a click on a blank
+line is ignored). The picker submenu gets no blank lines.
 
-**Presets are a layer, not a write.** A preset names four keys (`LOOK_KEYS`:
-`compactToolRows`, `groupToolRuns`, `foldIntermediateActivity`,
-`thinkingAsToolCall`). `Config` keeps the user's own values and computes the
+**Sub-settings.** `PARENTS` (config.ts) names the setting each sub-setting depends
+on. The editor indents a sub-setting one step per level and shows it only while
+every parent above it is on; it rebuilds the list after every change. `Config`
+reads a BOOLEAN sub-setting as off while its parent is off (`layer()`), so
+hiding a row also disables it, but the user's own value stays stored and comes
+back with the parent. A setting goes into `PARENTS` only when it is useless
+without its parent: `keepActiveThinkingExpanded` hangs off `thinkingAsToolCall`
+(off = Pi's native thinking, which Ctrl+T controls).
+
+The "Excluded tools" row sits under "Compact tool call blocks" and opens a submenu
+(a second `SettingsList` with `enableSearch`) listing every tool from
+`pi.getAllTools()`, read when it opens; Enter flips a tool between `compact` and
+`excluded`. Names in `excludeTools` that no loaded tool carries stay listed, so
+opening the picker never forgets them. `glyphs` and `tokens` are JSON-only: they
+need knowledge of Pi's palette. Default symbols are plain Unicode (no Nerd Font);
+`glyphStyle: "ascii"` uses one-column symbols only.
+
+**Presets are a layer, not a write.** A preset names five keys (`LOOK_KEYS`:
+`compactRows`, `compactToolRows`, `thinkingAsToolCall`, `groupToolRuns`,
+`foldIntermediateActivity`). `Config` keeps the user's own values and computes the
 effective view on read (`layer()`: user keys < preset look keys; `custom` adds
 nothing). Switching preset never touches the user's keys; other settings stay
-editable. There is no reset row: presets are the reset points.
+editable while their parent is on. There is no reset row: presets are the reset points.
 
-- Under a preset the four look rows are greyed: label AND value are dimmed (the
+- Under a preset the five look rows are greyed: label AND value are dimmed (the
   default value colour `muted` is too close to the hint colour to stand out alone),
   their only value is the dimmed current text, and `onChange` returns early.
-- `custom` is DISPLAYED as `custom (editable)` (`presetLabel`/`presetFromLabel`); the
+- `custom` is DISPLAYED as `custom (editable)` (`presetLabel`, `CHOICE_TEXT`); the
   stored preset name stays `custom`.
 - A fresh install (no basic key in the block, `isFresh`) gets `full`
   (`FRESH_PRESET`); the first write pins `"preset": "full"`. A block with basic
   keys but no `preset` stays `custom`.
 - The first switch to `custom` (`customSeed`) writes the `lite` look keys, only
-  when none of the four exist.
+  when none of the look keys exist.
 
 → `config.test.ts` "presets", `config-ui.test.ts` "presets in the config screen".
 

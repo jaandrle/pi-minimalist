@@ -89,7 +89,13 @@ export function isPreset(value: unknown): value is Preset {
 }
 
 /** The only settings a preset names. Every other setting stays the user's own. */
-export const LOOK_KEYS = ["compactToolRows", "groupToolRuns", "foldIntermediateActivity", "thinkingAsToolCall"] as const;
+export const LOOK_KEYS = [
+  "compactRows",
+  "compactToolRows",
+  "thinkingAsToolCall",
+  "groupToolRuns",
+  "foldIntermediateActivity",
+] as const;
 export type LookKey = (typeof LOOK_KEYS)[number];
 
 /** Preset of a user who has never configured anything (no basic key in the `minimalist` block). */
@@ -101,9 +107,11 @@ export function isFresh(block: unknown): boolean {
 }
 
 export type BasicSettings = {
-  /** A named bundle of the four look settings below. `custom` uses the user's own values for all of them. */
+  /** A named bundle of the look settings (`LOOK_KEYS`). `custom` uses the user's own values for all of them. */
   preset: Preset;
-  /** Master switch. Off restores Pi's native tool cards entirely. */
+  /** Master switch, parent of `compactToolRows` and `thinkingAsToolCall`. Off restores Pi's native tool cards AND native thinking. */
+  compactRows: boolean;
+  /** Tool calls as one-line rows. Off restores Pi's native tool cards. */
   compactToolRows: boolean;
   /** Fold adjacent finished rows into one summary line. */
   groupToolRuns: boolean;
@@ -137,6 +145,7 @@ export type Settings = BasicSettings & AdvancedSettings;
 
 export const DEFAULT_BASIC: BasicSettings = {
   preset: "custom",
+  compactRows: true,
   compactToolRows: true,
   groupToolRuns: true,
   foldIntermediateActivity: false,
@@ -150,14 +159,29 @@ export const DEFAULT_BASIC: BasicSettings = {
 };
 
 /**
- * The four look settings each non-custom preset forces. A preset is a LAYER
+ * The look settings each non-custom preset forces. A preset is a LAYER
  * applied on read (see `Config`); it never writes the user's own keys.
  */
 export const PRESETS: Record<Exclude<Preset, "custom">, Record<LookKey, boolean>> = {
-  off: { compactToolRows: false, groupToolRuns: false, foldIntermediateActivity: false, thinkingAsToolCall: false },
-  lite: { compactToolRows: true, groupToolRuns: false, foldIntermediateActivity: false, thinkingAsToolCall: false },
-  full: { compactToolRows: true, groupToolRuns: true, foldIntermediateActivity: false, thinkingAsToolCall: true },
-  max: { compactToolRows: true, groupToolRuns: true, foldIntermediateActivity: true, thinkingAsToolCall: true },
+  off: { compactRows: false, compactToolRows: false, thinkingAsToolCall: false, groupToolRuns: false, foldIntermediateActivity: false },
+  lite: { compactRows: true, compactToolRows: true, thinkingAsToolCall: false, groupToolRuns: false, foldIntermediateActivity: false },
+  full: { compactRows: true, compactToolRows: true, thinkingAsToolCall: true, groupToolRuns: true, foldIntermediateActivity: false },
+  max: { compactRows: true, compactToolRows: true, thinkingAsToolCall: true, groupToolRuns: true, foldIntermediateActivity: true },
+};
+
+/**
+ * The setting each sub-setting depends on. `/minimalist` shows a sub-setting
+ * only while its parent is on, and `Config` reads a boolean sub-setting as off
+ * while its parent is off. The user's own value is kept and comes back with
+ * the parent. Parents are listed before their children.
+ */
+export const PARENTS: Partial<Record<BasicKey, BasicKey>> = {
+  compactToolRows: "compactRows",
+  keepActiveToolsExpanded: "compactToolRows",
+  thinkingAsToolCall: "compactRows",
+  keepActiveThinkingExpanded: "thinkingAsToolCall",
+  foldIntermediateActivity: "groupToolRuns",
+  activitySummary: "foldIntermediateActivity",
 };
 
 export const DEFAULT_ADVANCED: AdvancedSettings = {
@@ -190,9 +214,16 @@ export const EDITABLE_KEYS = [...BASIC_KEYS, "excludeTools"] as (keyof EditableS
 // Live configuration
 // ---------------------------------------------------------------------------
 
-/** defaults < the user's own keys < the preset's four look keys (none for `custom`). */
+/**
+ * defaults < the user's own keys < the preset's look keys (none for `custom`),
+ * then every boolean sub-setting of an off parent reads as off.
+ */
 function layer(user: Settings): Settings {
-  return user.preset === "custom" ? user : { ...user, ...PRESETS[user.preset] };
+  const view = user.preset === "custom" ? { ...user } : { ...user, ...PRESETS[user.preset] };
+  for (const [child, parent] of Object.entries(PARENTS) as [BasicKey, BasicKey][]) {
+    if (!view[parent] && typeof view[child] === "boolean") (view as Record<string, unknown>)[child] = false;
+  }
+  return view;
 }
 
 /**
@@ -265,7 +296,7 @@ export class Config {
 
   /**
    * True when this tool should be drawn as a compact row. The exclusion list is
-   * the ONLY exemption, so the master switch is checked alongside it.
+   * the ONLY exemption, so `compactToolRows` (already off while `compactRows` is off) is checked alongside it.
    */
   compacts(toolName: string): boolean {
     return this.view.compactToolRows && !this.view.excludeTools.includes(toolName);

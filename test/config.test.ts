@@ -235,6 +235,30 @@ describe("Config", () => {
   });
 });
 
+describe("sub-settings", () => {
+  it("reads a boolean sub-setting as off while its parent is off, and keeps the user's value", () => {
+    const config = new Config({ ...DEFAULTS, compactRows: false, compactToolRows: true, thinkingAsToolCall: true });
+    assert.equal(config.get("compactToolRows"), false);
+    assert.equal(config.get("thinkingAsToolCall"), false);
+    assert.equal(config.compacts("read"), false);
+    config.set("compactRows", true);
+    assert.equal(config.get("compactToolRows"), true);
+    assert.equal(config.get("thinkingAsToolCall"), true);
+  });
+
+  it("ignores streaming expansion while thinking is native", () => {
+    const config = new Config({ ...DEFAULTS, thinkingAsToolCall: false, keepActiveThinkingExpanded: true });
+    assert.equal(config.get("keepActiveThinkingExpanded"), false);
+    config.set("thinkingAsToolCall", true);
+    assert.equal(config.get("keepActiveThinkingExpanded"), true);
+  });
+
+  it("does not touch a non-boolean sub-setting", () => {
+    const config = new Config({ ...DEFAULTS, foldIntermediateActivity: false, activitySummary: "tools" });
+    assert.equal(config.get("activitySummary"), "tools");
+  });
+});
+
 describe("presets", () => {
   const user = { ...DEFAULTS, groupToolRuns: false, gutter: false, excludeTools: ["x"] };
 
@@ -277,7 +301,7 @@ describe("presets", () => {
     assert.equal(loadSettings(env).preset, "full");
   });
 
-  it("a preset names only the four look keys and leaves other settings alone", () => {
+  it("a preset names only the look keys and leaves other settings alone", () => {
     const c = new Config({ ...DEFAULTS, preset: "max", gutter: false, glyphStyle: "ascii" });
     assert.equal(c.get("gutter"), false);
     assert.equal(c.get("glyphStyle"), "ascii");

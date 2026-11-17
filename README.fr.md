@@ -34,33 +34,33 @@ Redémarrez Pi : les appels d'outils s'affichent en lignes compactes. Aucune con
 
 ## Choisir le niveau de discrétion
 
-Lancez **`/minimalist`** pour modifier les réglages en direct. Commencez par les lignes d'outils compactes, ou allez plus loin :
+Lancez **`/minimalist`** pour modifier les réglages en direct. Les réglages sont rangés en trois sections ; un sous-réglage n'apparaît que lorsque le réglage au-dessus de lui est activé :
 
-- **Combine consecutive tool calls** (regrouper les appels d'outils consécutifs) en un seul résumé, par exemple `read ×2, edit ×1`.
-- **Collapse earlier activity** (replier l'activité précédente) pour garder la dernière réponse au premier plan. L'activité qui la précède est remplacée par le temps de travail ou le nombre d'outils.
-- **Compact thinking rows** (lignes de réflexion compactes), ou garder la réflexion visible pendant qu'elle arrive.
-- **Keep running tools visible** (garder visibles les outils en cours) pendant le regroupement des autres appels, avec un minuteur qui affiche leur durée.
-- **Excluded tools** (outils exclus) : un outil donné (par exemple `subagent`) garde sa propre carte au lieu d'être réduit à une ligne. Ouvrez cette ligne dans `/minimalist`, tapez pour chercher, puis appuyez sur Entrée sur un outil pour le basculer.
+- **Apparence** : le jeu de symboles (Unicode ou ASCII), la barre colorée à gauche de chaque ligne et la durée d'exécution des appels d'outils.
+- **Compact output blocks into rows** (réduire les blocs de sortie en lignes) : appels d'outils et réflexion sur une seule ligne. En dessous, choisissez quels outils gardent leur propre carte (**Excluded tools** : tapez pour chercher, puis Entrée sur un outil pour le basculer), si un appel d'outil en cours garde sa propre ligne, et si la réflexion est dépliée pendant sa génération.
+- **Merge consecutive rows into one** (fusionner les lignes consécutives) en un seul résumé, par exemple `read ×2, edit ×1`. En dessous, **Show only the final reply** (n'afficher que la réponse finale) garde la dernière réponse au premier plan et replie tout ce qui la précède en temps de travail ou en nombre d'outils.
 
-Une nouvelle installation démarre avec le préréglage **`full`** (voir plus bas) : lignes d'outils compactes, appels regroupés et lignes de réflexion compactes. Le repli de l'activité est facultatif. Choisissez `lite` si vous préférez voir chaque appel séparément.
+Quand vous désactivez un réglage, les choix en dessous sont conservés et reviennent quand vous le réactivez.
+
+Une nouvelle installation démarre avec le préréglage **`full`** (voir plus bas) : lignes d'outils compactes, appels regroupés et lignes de réflexion compactes. L'affichage de la seule réponse finale est facultatif. Choisissez `lite` si vous préférez voir chaque appel séparément.
 
 ### Préréglages
 
-La ligne **Preset** en haut de `/minimalist` règle quatre options à la fois : **Compact tool rows**, **Combine consecutive tool calls**, **Collapse earlier activity** et **Compact thinking rows**.
+La ligne **Preset** en haut de `/minimalist` règle cinq options à la fois : **Compact output blocks into rows**, **Compact tool call blocks**, **Compact thinking blocks**, **Merge consecutive rows into one** et **Show only the final reply**.
 
 | Préréglage | Ce que vous obtenez |
 | --- | --- |
 | `off` | Les cartes d'outils natives de Pi. |
 | `lite` | Des lignes d'outils d'une ligne, chaque appel sur sa propre ligne. |
 | `full` | `lite`, plus les appels consécutifs regroupés et les lignes de réflexion compactes. |
-| `max` | `full`, plus l'activité précédente repliée (`Worked for …`). |
-| `custom` | Vos propres valeurs pour ces quatre options. |
+| `max` | `full`, plus la seule réponse finale (`Worked for …`). |
+| `custom` | Vos propres valeurs pour ces cinq options. |
 
 <img src="docs/presets.png" width="600" alt="L'écran de choix du préréglage">
 
-Un préréglage n'écrase jamais vos réglages. Tant que `off`, `lite`, `full` ou `max` est sélectionné, seules ces quatre lignes sont grisées et affichent les valeurs du préréglage ; appuyer sur Entrée dessus ne fait rien. Toutes les autres options (Left border, Elapsed timer, Symbols, etc.) restent à vous et restent modifiables. Vos propres valeurs sont conservées et reviennent quand vous choisissez `custom`. La première fois que vous choisissez `custom`, il part de `lite`.
+Un préréglage n'écrase jamais vos réglages. Tant que `off`, `lite`, `full` ou `max` est sélectionné, seules ces cinq lignes sont grisées et affichent les valeurs du préréglage ; appuyer sur Entrée dessus ne fait rien. Toutes les autres options (les réglages d'apparence, Show a running tool call, etc.) restent à vous et restent modifiables, tant que le réglage au-dessus est activé (un préréglage qui désactive une ligne masque aussi les réglages en dessous). Vos propres valeurs sont conservées et reviennent quand vous choisissez `custom`. La première fois que vous choisissez `custom`, il part de `lite`.
 
-**Mise à jour :** si vos réglages contiennent déjà un bloc `minimalist`, vous restez sur `custom` et rien ne change. Seul un utilisateur sans aucun réglage `minimalist` démarre sur `full`, ce qui rend les lignes de réflexion compactes. Pour choisir un autre aspect, changez **Preset**.
+**Mise à jour :** si vos réglages contiennent déjà un bloc `minimalist`, vous restez sur `custom` et gardez vos valeurs. Une seule règle est nouvelle : un réglage placé sous un réglage désactivé est ignoré, par exemple **Show only the final reply** quand **Merge consecutive rows into one** est désactivé. Seul un utilisateur sans aucun réglage `minimalist` démarre sur `full`, ce qui rend les lignes de réflexion compactes. Pour choisir un autre aspect, changez **Preset**.
 
 ### Commandes courantes
 
@@ -71,11 +71,11 @@ Un préréglage n'écrase jamais vos réglages. Tant que `off`, `lite`, `full` o
 | Ctrl+O | Développer ou replier la sortie des outils |
 | Ctrl+T | Développer ou replier la réflexion |
 
-Les réglages s'appliquent à l'historique existant et sont enregistrés globalement. Si un symbole s'affiche mal dans votre terminal, choisissez **Symbols → ASCII**. Aucune Nerd Font n'est requise.
+Les réglages s'appliquent à l'historique existant et sont enregistrés globalement. Si un symbole s'affiche mal dans votre terminal, choisissez **Symbol set → ASCII**. Aucune Nerd Font n'est requise.
 
 ## Revenir à l'affichage habituel de Pi
 
-Désactivez **Compact tool rows** pour retrouver les cartes d'outils natives. Ou choisissez le préréglage `off`.
+Désactivez **Compact output blocks into rows** pour retrouver les cartes d'outils et la réflexion natives, ou seulement **Compact tool call blocks** pour les cartes d'outils. Ou choisissez le préréglage `off`.
 
 Pour désactiver complètement l'extension, lancez `pi config`, désactivez pi-minimalist, puis redémarrez Pi.
 

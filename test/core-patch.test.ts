@@ -244,7 +244,7 @@ describe("runtime core patches against real Pi components", { skip: PI_ROOT ? fa
     }
   });
 
-  it("keeps streaming expansion independent from compact thinking", async () => {
+  it("ignores streaming expansion while thinking is native (its parent setting is off)", async () => {
     const { components, newAssistant } = await loadPi();
     const shared = install(components, { thinkingAsToolCall: false, keepActiveThinkingExpanded: true }, "assistant");
     const timers = fakeTimers();
@@ -253,10 +253,10 @@ describe("runtime core patches against real Pi components", { skip: PI_ROOT ? fa
     const row = newAssistant(message);
     row.updateContent(message, true);
     const streaming = textOf(row);
-    assert.match(streaming, /full reasoning/);
-    assert.doesNotMatch(streaming, /▌|[✓•] think/);
+    assert.match(streaming, /Thinking\.\.\./, "Pi's own collapsed label, not forced open");
+    assert.doesNotMatch(streaming, /▌|[✓•] think|full reasoning/);
+    assert.equal(timers.pending(), 0);
     row.updateContent(message, false);
-    timers.fire();
     const done = textOf(row);
     assert.match(done, /Thinking\.\.\./);
     assert.doesNotMatch(done, /▌|✓ think|full reasoning/);

@@ -156,7 +156,7 @@ export function createToolRenderer(deps: RendererDeps): ToolRenderer {
   return {
     // One custom line instead of Pi's padded Box shell.
     renderShell: "self",
-    // Blacklist plus the master switch: every tool compacts unless excluded.
+    // Blacklist plus `compactToolRows`: every tool compacts unless excluded.
     handles: (name) => config.compacts(name),
 
     renderCall(name, args, theme: ThemeLike, context: CallContext & { lastComponent?: unknown; invalidate(): void }) {
