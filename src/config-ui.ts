@@ -18,27 +18,27 @@ type Field = {
   key: BasicKey;
   label: string;
   description: string;
-  /** Draw one blank line above this row: it starts a new section. */
-  section?: boolean;
+  /** This row starts a new section: a blank line and this title are drawn above it. */
+  section?: string;
 };
 
 /**
  * Label and hover description for every basic setting, in display order.
  *
- * A sub-setting (one with an entry in `PARENTS`) is indented one step per
- * level and shown only while its parent is on.
+ * A sub-setting (one with an entry in `PARENTS`) is drawn under its parent
+ * with tree guides and shown only while its parent is on.
  */
 export const FIELDS: Field[] = [
   {
     key: "preset",
     label: "Preset",
-    description: "off = native Pi, lite = one-line tool rows, full = + merged rows and thinking rows, max = + only the final reply. custom uses your own values. A preset only sets the compact, merge and final-reply rows; your other settings are kept.",
+    description: "off = native Pi, lite = one-line tool rows, full = + merged rows and thinking rows, max = + only the final reply. custom uses your own values. A preset only sets the three Shrink rows, Merge consecutive rows and Show only the final reply; your other settings are kept.",
   },
   {
     key: "glyphStyle",
     label: "Symbol set",
     description: "Use ordinary Unicode symbols, or switch to ASCII if some symbols are missing or misaligned. A Nerd Font is not required.",
-    section: true,
+    section: "Appearance",
   },
   {
     key: "gutter",
@@ -52,45 +52,45 @@ export const FIELDS: Field[] = [
   },
   {
     key: "compactRows",
-    label: "Compact output blocks into rows",
+    label: "Shrink output blocks to one line",
     description: "Draw tool calls and thinking as one-line rows. Off restores Pi's native blocks; the choices below are kept for later.",
-    section: true,
+    section: "One-line rows",
   },
   {
     key: "compactToolRows",
-    label: "Compact tool call blocks",
+    label: "Shrink tool call output",
     description: "Show each tool call as one line instead of Pi's full card. Ctrl+O still shows the output.",
   },
   {
     key: "keepActiveToolsExpanded",
-    label: "Show a running tool call",
-    description: "'merged with others' lets a running tool call join a merged row; 'as its own row' keeps it separate so you can watch it; 'expanded' also shows its output as it arrives, like Ctrl+O.",
+    label: "Expand ongoing tool call",
+    description: "Expand a running tool call like Ctrl+O, so its output shows as it arrives. 'no' keeps it as one line: merged with the rows around it, or on its own row so you can watch it.",
   },
   {
     key: "toolLingerSeconds",
-    label: "Keep that view after it ends",
-    description: "How long a finished tool call keeps its running view (own row or expanded) before it folds or collapses. 0 = right away.",
+    label: "Keep it after it ends",
+    description: "How long a finished tool call keeps that view (own row or expanded) before it merges or collapses. 0 = right away.",
   },
   {
     key: "thinkingAsToolCall",
-    label: "Compact thinking blocks",
-    description: "Show collapsed thinking as a one-line row. Off restores Pi's native thinking.",
+    label: "Shrink thinking output",
+    description: "Show thinking as one line instead of Pi's thinking block. Off restores Pi's native thinking.",
   },
   {
     key: "keepActiveThinkingExpanded",
-    label: "Expand thinking while generating",
-    description: "Show the full thinking block as it arrives, instead of collapsed.",
+    label: "Expand ongoing thinking",
+    description: "Show the full thinking as it arrives, instead of one line.",
   },
   {
     key: "thinkingLingerSeconds",
-    label: "Keep it open after it ends",
+    label: "Keep it after it ends",
     description: "How long thinking stays expanded after it is generated, so a short thought can be read. 0 = collapse right away.",
   },
   {
     key: "groupToolRuns",
     label: "Merge consecutive rows into one",
     description: "Replace consecutive finished rows with a single count, e.g. 'read ×2, edit ×1'.",
-    section: true,
+    section: "Merging rows",
   },
   {
     key: "foldIntermediateActivity",
@@ -109,17 +109,63 @@ export const FIELDS: Field[] = [
   },
 ];
 
-/** Rows with a blank line above them. */
-const SECTION_STARTS = new Set<string>(FIELDS.filter((field) => field.section).map((field) => field.key));
+/** Section title by the id of the row that starts it. */
+const SECTIONS = new Map(FIELDS.flatMap((field) => (field.section ? [[field.key as string, field.section]] : [])));
 
-/** How many parents a setting has, i.e. how far its label is indented. */
-function depth(key: string): number {
+const EXCLUDE_ID = "excludeTools";
+
+/** How many parents a row has, i.e. how deep it sits in the tree. */
+function depth(id: string): number {
+  // The tool picker row is a child of "Shrink tool call output".
+  if (id === EXCLUDE_ID) return depth("compactToolRows") + 1;
   let level = 0;
-  for (let parent = PARENTS[key as BasicKey]; parent; parent = PARENTS[parent]) level++;
+  for (let parent = PARENTS[id as BasicKey]; parent; parent = PARENTS[parent]) level++;
   return level;
 }
 
-const indent = (key: string, label: string) => "  ".repeat(depth(key)) + label;
+type GuideStyle = { pipe: string; tee: string; last: string; rule: string };
+export const GUIDES: Record<"unicode" | "ascii", GuideStyle> = {
+  unicode: { pipe: "│  ", tee: "├─ ", last: "└─ ", rule: "─" },
+  ascii: { pipe: "|  ", tee: "|- ", last: "`- ", rule: "-" },
+};
+/** A label's guide prefix: only guide characters and spaces, as every setting name starts with a letter. */
+const GUIDE_PREFIX = /^[│├└─|`\- ]*/;
+const guideStyle = (glyphStyle: string) => GUIDES[glyphStyle === "ascii" ? "ascii" : "unicode"];
+
+/** Lines drawn above each section: a blank line and the title. */
+const TITLE_LINES = 2;
+/** Fixed cap, so the title rule does not span very wide terminals. */
+const TITLE_WIDTH = 64;
+
+/**
+ * Tree guides for rows in display order, from their depths alone.
+ *
+ * A row gets `├─` when a sibling follows before the tree climbs above it, else
+ * `└─`; each ancestor level gets `│` while that ancestor still has a sibling to
+ * come, else blank. Depth-0 rows are roots and get no guide.
+ */
+export function treeGuides(depths: number[], style: GuideStyle): string[] {
+  /** True when a row at `level` follows `index` before any shallower row. */
+  const continues = (index: number, level: number) => {
+    for (let next = index + 1; next < depths.length; next++) {
+      if (depths[next] < level) return false;
+      if (depths[next] === level) return true;
+    }
+    return false;
+  };
+  return depths.map((level, index) => {
+    if (level === 0) return "";
+    let guide = "";
+    for (let ancestor = 1; ancestor < level; ancestor++) guide += continues(index, ancestor) ? style.pipe : "   ";
+    return guide + (continues(index, level) ? style.tee : style.last);
+  });
+}
+
+/** Prefix each label with its tree guide. */
+function withGuides<T extends { id: string; label: string }>(rows: T[], style: GuideStyle): T[] {
+  const guides = treeGuides(rows.map((row) => depth(row.id)), style);
+  return rows.map((row, index) => ({ ...row, label: guides[index] + row.label }));
+}
 
 /**
  * A row is visible while every parent above it is on. The whole chain is
@@ -147,11 +193,13 @@ const presetLabel = (preset: string) => (preset === "custom" ? CUSTOM_LABEL : pr
 
 const isLook = (key: string) => (LOOK_KEYS as readonly string[]).includes(key);
 
-/** Conditional rows plus their display values. `dim` greys the look rows a preset owns. */
+/**
+ * Conditional rows plus their display values, without tree guides (the screen
+ * adds them once the picker row is in place). `dim` greys the look rows a preset owns.
+ */
 export function items(settings: Settings, dim?: (text: string) => string): SettingItem[] {
   return visibleFields(settings).map(
-    ({ key, label: name, description }) => {
-      const label = indent(key, name);
+    ({ key, label, description }) => {
       const value = displayValue(key, settings[key]);
       // SettingsList has no disabled rows, so a locked row shows its dimmed value
       // as its ONLY value: Enter "cycles" to the same text and nothing changes.
@@ -180,7 +228,6 @@ export type ConfigScreenDeps = {
   onClose: () => void;
 };
 
-const EXCLUDE_ID = "excludeTools";
 const PICKER_ROWS = 12;
 
 /** "none", the names when there are one or two, else a count. */
@@ -190,7 +237,7 @@ export function excludedSummary(names: string[]): string {
 }
 
 /**
- * One row per tool; Enter flips it between `compact` and `excluded`. It reuses
+ * One row per tool; Enter flips it between `one line` and `own card`. It reuses
  * SettingsList with its built-in search, so it has Pi's own keys and look and
  * no list/filter code of ours. Names in `excludeTools` that no loaded tool
  * carries (an extension not loaded this session) stay listed, or opening the
@@ -205,15 +252,15 @@ function toolPicker(deps: ConfigScreenDeps, done: (summary: string) => void): Co
     id: name,
     label: name,
     description: known.has(name) ? undefined : "Not loaded in this session; kept in your settings.",
-    currentValue: excluded.includes(name) ? "excluded" : "compact",
-    values: ["compact", "excluded"],
+    currentValue: excluded.includes(name) ? "own card" : "one line",
+    values: ["one line", "own card"],
   }));
   return new SettingsList(
     rows,
     Math.min(PICKER_ROWS, Math.max(rows.length, 1)),
     theme,
     (name, value) => {
-      excluded = value === "excluded" ? [...excluded, name] : excluded.filter((n) => n !== name);
+      excluded = value === "own card" ? [...excluded, name] : excluded.filter((n) => n !== name);
       onExcludeChange(excluded);
     },
     () => done(excludedSummary(excluded)),
@@ -223,18 +270,27 @@ function toolPicker(deps: ConfigScreenDeps, done: (summary: string) => void): Co
 
 /** Build a live screen; every change rebuilds the list, so sub-settings appear or disappear at once. */
 export function createConfigScreen(deps: ConfigScreenDeps): InputComponent {
-  const { SettingsList, theme, config, onChange, onClose } = deps;
+  const { SettingsList, config, onChange, onClose } = deps;
+  // Tree guides are drawn in the hint colour and the setting name in the
+  // label colour. They cannot share one coloured string: the guide's colour
+  // reset would also end the selected row's highlight.
+  const theme: SettingsListTheme = {
+    ...deps.theme,
+    label: (text, selected) => {
+      const guide = text.match(GUIDE_PREFIX)?.[0] ?? "";
+      return (guide ? deps.theme.hint(guide) : "") + deps.theme.label(text.slice(guide.length), selected);
+    },
+  };
   let list: SettingsList;
   let rows: SettingItem[] = [];
   let locked = false;
-  // The section gaps are drawn around the main list only, never around the picker.
+  // The section titles are drawn around the main list only, never around the picker.
   let pickerOpen = false;
 
   const excludeRow = (): SettingItem => ({
     id: EXCLUDE_ID,
-    // A child of "Compact tool call blocks", like the rows that follow it.
-    label: "  ".repeat(depth("compactToolRows") + 1) + "Excluded tools",
-    description: "Tools drawn with their own card instead of a one-line row, e.g. subagent. Enter to pick; type to search.",
+    label: "Excluded tools",
+    description: "Tools that keep their own card instead of one line, e.g. subagent. Enter to pick; type to search.",
     currentValue: excludedSummary(config.get("excludeTools")),
     submenu: (_current, done) => {
       pickerOpen = true;
@@ -251,6 +307,7 @@ export function createConfigScreen(deps: ConfigScreenDeps): InputComponent {
     // The picker belongs to the tool call rows, so it sits right under them.
     const tools = rows.findIndex((row) => row.id === "compactToolRows");
     if (tools >= 0 && config.get("compactToolRows")) rows.splice(tools + 1, 0, excludeRow());
+    rows = withGuides(rows, guideStyle(config.get("glyphStyle")));
     return new SettingsList(
       rows,
       rows.length,
@@ -271,29 +328,41 @@ export function createConfigScreen(deps: ConfigScreenDeps): InputComponent {
     );
   };
 
-  /** Main-list line index of each row that starts a section, i.e. has a blank line above it. */
-  const gaps = () => (pickerOpen ? [] : rows.flatMap((row, index) => (index > 0 && SECTION_STARTS.has(row.id) ? [index] : [])));
+  /** Main-list line index of each row that starts a section, i.e. has a title above it. */
+  const sections = () =>
+    pickerOpen ? [] : rows.flatMap((row, index) => (index > 0 && SECTIONS.has(row.id) ? [index] : []));
 
   list = build();
   return {
     render: (width) => {
       const lines = list.render(width);
-      for (const index of gaps().reverse()) lines.splice(index, 0, "");
+      const { rule } = guideStyle(config.get("glyphStyle"));
+      for (const index of sections().reverse()) {
+        lines.splice(index, 0, "", sectionTitle(SECTIONS.get(rows[index].id)!, rule, width, theme.hint));
+      }
       return [...lines, truncateToWidth(theme.hint("  Changes apply live · Ctrl+O reveals tool output"), width)];
     },
     handleInput: (data) => list.handleInput(data),
     handleMouse: (event) => {
-      // The blank lines are ours, so move `y` back to the line SettingsList drew.
+      // Each section adds two lines of ours (blank + title): move `y` back to the
+      // line SettingsList drew, and ignore clicks on our own lines.
       let y = event.y;
-      for (const [count, index] of gaps().entries()) {
-        const blank = index + count;
-        if (event.y === blank) return undefined;
-        if (event.y > blank) y--;
+      for (const [count, index] of sections().entries()) {
+        const top = index + count * TITLE_LINES;
+        if (event.y >= top && event.y < top + TITLE_LINES) return undefined;
+        if (event.y >= top + TITLE_LINES) y -= TITLE_LINES;
       }
       return list.handleMouse?.({ ...event, y });
     },
     invalidate: () => list.invalidate?.(),
   };
+}
+
+/** `── Appearance ─────`, indented like the labels, in the hint colour. */
+function sectionTitle(name: string, rule: string, width: number, paint: (text: string) => string): string {
+  const head = `${rule}${rule} ${name} `;
+  const length = Math.max(head.length, Math.min(width - 2, TITLE_WIDTH));
+  return truncateToWidth(`  ${paint(head + rule.repeat(length - head.length))}`, width);
 }
 
 function isBasicKey(id: string): id is BasicKey {
@@ -306,7 +375,7 @@ const LINGER_CHOICES: [BasicValue, string][] = LINGER_SECONDS.map((seconds) => [
 const CHOICE_TEXT: Partial<Record<BasicKey, [BasicValue, string][]>> = {
   preset: PRESET_NAMES.map((name) => [name, presetLabel(name)]),
   glyphStyle: [["unicode", "Unicode"], ["ascii", "ASCII"]],
-  keepActiveToolsExpanded: [[false, "merged with others"], [true, "as its own row"], ["expanded", "expanded, like Ctrl+O"]],
+  keepActiveToolsExpanded: [[false, "no, merge with others"], [true, "no, keep on its own row"], ["expanded", "yes, like Ctrl+O"]],
   toolLingerSeconds: LINGER_CHOICES,
   thinkingLingerSeconds: LINGER_CHOICES,
   activitySummary: [["elapsed", "elapsed time"], ["tools", "tools used"]],
@@ -334,15 +403,18 @@ export function argumentCompletions(prefix: string): AutocompleteItem[] | null {
   return filtered.length > 0 ? filtered : null;
 }
 
-/** One-line-per-visible-setting summary for `/minimalist status`. */
+/** One-line-per-visible-setting summary for `/minimalist status`, laid out like the screen. */
 export function summary(settings: Settings): string {
-  const rows = visibleFields(settings).map(({ key, label }) => ({ key, label: indent(key, label) }));
+  const style = guideStyle(settings.glyphStyle);
+  const rows = withGuides(visibleFields(settings).map(({ key, label }) => ({ id: key, label })), style);
   const width = Math.max(...rows.map((row) => row.label.length));
+  const rule = style.rule;
   return [
-    ...rows.flatMap(({ key, label }, index) => {
+    ...rows.flatMap(({ id: key, label }, index) => {
       const dimmed = settings.preset !== "custom" && isLook(key) ? " (from preset)" : "";
       const line = `  ${label.padEnd(width)}  ${displayValue(key, settings[key])}${dimmed}`;
-      return index > 0 && SECTION_STARTS.has(key) ? ["", line] : [line];
+      const title = SECTIONS.get(key);
+      return index > 0 && title ? ["", `  ${rule}${rule} ${title}`, line] : [line];
     }),
     "",
     "  /minimalist          change these",

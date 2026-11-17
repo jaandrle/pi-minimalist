@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { SettingsList, visibleWidth } from "@earendil-works/pi-tui";
 import { BASIC_KEYS, Config, DEFAULTS } from "../src/config.ts";
-import { FIELDS, argumentCompletions, createConfigScreen, items, summary } from "../src/config-ui.ts";
+import { FIELDS, GUIDES, argumentCompletions, createConfigScreen, items, summary, treeGuides } from "../src/config-ui.ts";
 
 type Item = {
   id: string;
@@ -111,14 +111,61 @@ describe("config screen contents", () => {
     assert.equal(config.get("glyphStyle"), "unicode");
   });
 
-  it("indents each sub-setting one step per parent", () => {
-    const labels = new Map(items({ ...DEFAULTS, thinkingAsToolCall: true }).map((item) => [item.id, item.label]));
-    assert.match(labels.get("compactRows")!, /^\S/);
-    assert.match(labels.get("compactToolRows")!, /^  \S/);
-    assert.match(labels.get("keepActiveToolsExpanded")!, /^    \S/);
-    assert.match(labels.get("keepActiveThinkingExpanded")!, /^    \S/);
-    const folded = new Map(items({ ...DEFAULTS, foldIntermediateActivity: true }).map((item) => [item.id, item.label]));
-    assert.match(folded.get("activitySummary")!, /^    \S/);
+  it("draws tree guides from row depths alone", () => {
+    assert.deepEqual(treeGuides([0, 1, 2, 2, 3, 1, 2, 0, 1], GUIDES.unicode), [
+      "", "├─ ", "│  ├─ ", "│  └─ ", "│     └─ ", "└─ ", "   └─ ", "", "└─ ",
+    ]);
+  });
+
+  it("puts the guides in front of the labels, Excluded tools included", () => {
+    const labels = new Map(
+      screen(new Config({ ...DEFAULTS, thinkingAsToolCall: true, keepActiveToolsExpanded: true })).items.map((item) => [item.id, item.label]),
+    );
+    assert.equal(labels.get("compactRows"), "Shrink output blocks to one line");
+    assert.equal(labels.get("compactToolRows"), "├─ Shrink tool call output");
+    assert.equal(labels.get("excludeTools"), "│  ├─ Excluded tools");
+    assert.equal(labels.get("keepActiveToolsExpanded"), "│  └─ Expand ongoing tool call");
+    assert.equal(labels.get("toolLingerSeconds"), "│     └─ Keep it after it ends");
+    assert.equal(labels.get("thinkingAsToolCall"), "└─ Shrink thinking output");
+    assert.equal(labels.get("keepActiveThinkingExpanded"), "   └─ Expand ongoing thinking");
+
+    // A hidden row changes the guides around it: with no linger row below it,
+    // the running-tool row no longer draws a branch for it.
+    const merged = new Map(
+      screen(new Config({ ...DEFAULTS, keepActiveToolsExpanded: false })).items.map((item) => [item.id, item.label]),
+    );
+    assert.equal(merged.has("toolLingerSeconds"), false);
+    assert.equal(merged.get("keepActiveToolsExpanded"), "│  └─ Expand ongoing tool call");
+    assert.equal(merged.get("thinkingAsToolCall"), "└─ Shrink thinking output");
+    const toolsOff = screen(new Config({ ...DEFAULTS, compactToolRows: false })).items;
+    assert.equal(toolsOff.some((item) => item.id === "excludeTools"), false);
+
+    const ascii = new Map(screen(new Config({ ...DEFAULTS, glyphStyle: "ascii" })).items.map((item) => [item.id, item.label]));
+    assert.equal(ascii.get("compactToolRows"), "|- Shrink tool call output");
+    assert.equal(ascii.get("keepActiveToolsExpanded"), "|  `- Expand ongoing tool call");
+  });
+
+  it("keeps every label, guide included, within SettingsList's 36-column label column", () => {
+    const all = screen(new Config({
+      ...DEFAULTS, keepActiveToolsExpanded: true, thinkingAsToolCall: true, keepActiveThinkingExpanded: true, foldIntermediateActivity: true,
+    })).items;
+    assert.equal(all.length, FIELDS.length + 1, "every row is visible, Excluded tools included");
+    for (const item of all) assert.ok(visibleWidth(item.label) <= 36, `${item.label}: ${visibleWidth(item.label)}`);
+  });
+
+  it("paints the guide in the hint colour and only the name in the label colour", () => {
+    createConfigScreen({
+      SettingsList: FakeSettingsList as never,
+      theme: { hint: (t: string) => `<h>${t}</h>`, label: (t: string, selected: boolean) => (selected ? `<S>${t}</S>` : `<l>${t}</l>`) } as never,
+      config: new Config(DEFAULTS),
+      onChange: () => {},
+      toolNames: () => [],
+      onExcludeChange: () => {},
+      onClose: () => {},
+    });
+    const theme = FakeSettingsList.last!.theme as { label(t: string, s: boolean): string };
+    assert.equal(theme.label("│  ├─ Excluded tools   ", true), "<h>│  ├─ </h><S>Excluded tools   </S>");
+    assert.equal(theme.label("Symbol set", false), "<l>Symbol set</l>");
   });
 
   it("shows a sub-setting only while every parent above it is on", () => {
@@ -138,7 +185,7 @@ describe("config screen contents", () => {
     assert.equal(ids({ ...DEFAULTS, groupToolRuns: false, foldIntermediateActivity: true }).includes("activitySummary"), false);
   });
 
-  it("orders the rows in sections: preset, appearance, compact rows, merging", () => {
+  it("orders the rows in sections: preset, appearance, one-line rows, merging", () => {
     const ids = items({ ...DEFAULTS, keepActiveToolsExpanded: true, thinkingAsToolCall: true, keepActiveThinkingExpanded: true, foldIntermediateActivity: true }).map((item) => item.id);
     assert.deepEqual(ids, [
       "preset",
@@ -150,8 +197,8 @@ describe("config screen contents", () => {
     ]);
   });
 
-  it("draws one blank line above each section, and maps clicks past it", () => {
-    const lines = Array.from({ length: 20 }, (_, i) => `line ${i}`);
+  it("draws a blank line and a title above each section, and maps clicks past them", () => {
+    const lines = Array.from({ length: 30 }, (_, i) => `line ${i}`);
     const seen: number[] = [];
     class Drawing extends FakeSettingsList {
       render(): string[] {
@@ -164,7 +211,7 @@ describe("config screen contents", () => {
     }
     const component = createConfigScreen({
       SettingsList: Drawing as never,
-      theme: { hint: (text: string) => text } as never,
+      theme: { hint: (text: string) => text, label: (text: string) => text } as never,
       config: new Config(DEFAULTS),
       onChange: () => {},
       toolNames: () => [],
@@ -172,21 +219,19 @@ describe("config screen contents", () => {
       onClose: () => {},
     });
     const ids = FakeSettingsList.last!.items.map((item) => item.id);
-    const drawn = component.render(80);
-    // preset | gap | 3 appearance rows | gap | compact rows ...
-    assert.equal(drawn[0], "line 0");
-    assert.equal(drawn[1], "");
-    assert.equal(drawn[2], "line 1");
-    assert.equal(drawn[5], "");
-    assert.equal(drawn[6], `line ${ids.indexOf("compactRows")}`);
+    const drawn = component.render(40);
+    // preset | blank | title | 3 appearance rows | blank | title | one-line rows ...
+    assert.deepEqual(drawn.slice(0, 7), ["line 0", "", "  ── Appearance ────────────────────────", "line 1", "line 2", "line 3", ""]);
+    assert.equal(drawn[7], "  ── One-line rows ─────────────────────");
+    assert.equal(drawn[8], `line ${ids.indexOf("compactRows")}`);
     const event = { y: 0, x: 0, type: "click", button: "left" };
-    assert.equal(component.handleMouse!({ ...event, y: 1 } as never), undefined, "a blank line is not a row");
-    component.handleMouse!({ ...event, y: 6 } as never);
+    for (const y of [1, 2, 6, 7]) assert.equal(component.handleMouse!({ ...event, y } as never), undefined, `line ${y} is not a row`);
+    component.handleMouse!({ ...event, y: 8 } as never);
     assert.deepEqual(seen, [ids.indexOf("compactRows")]);
   });
 
-  it("lines the blank lines up with pi-tui's real SettingsList, clicks included", () => {
-    // The gaps assume SettingsList draws item i on line i (no search, no scroll).
+  it("lines the titles up with pi-tui's real SettingsList, clicks included", () => {
+    // The titles assume SettingsList draws item i on line i (no search, no scroll).
     const theme = { label: (t: string) => t, value: (t: string) => t, description: (t: string) => t, cursor: "> ", hint: (t: string) => t };
     const config = new Config(DEFAULTS);
     const component = createConfigScreen({
@@ -194,9 +239,10 @@ describe("config screen contents", () => {
     });
     const lines = component.render(100);
     const at = (label: string) => lines.findIndex((line) => line.includes(label));
-    assert.equal(lines[at("Symbol set") - 1], "", "a blank line above a section");
-    assert.equal(lines[at("Compact output blocks into rows") - 1], "");
-    assert.equal(lines[at("Merge consecutive rows into one") - 1], "");
+    assert.match(lines[at("Symbol set") - 1], /── Appearance ─/);
+    assert.equal(lines[at("Symbol set") - 2], "");
+    assert.match(lines[at("Shrink output blocks to one line") - 1], /── One-line rows ─/);
+    assert.match(lines[at("Merge consecutive rows into one") - 1], /── Merging rows ─/);
 
     const click = (y: number) => {
       component.handleMouse!({ x: 4, y, type: "press", button: "left" } as never);
@@ -220,8 +266,8 @@ describe("config screen contents", () => {
 
   it("offers the three running-tool views and the linger seconds", () => {
     const byId = new Map(items({ ...DEFAULTS, keepActiveToolsExpanded: "expanded", thinkingAsToolCall: true, keepActiveThinkingExpanded: true }).map((item) => [item.id, item]));
-    assert.deepEqual(byId.get("keepActiveToolsExpanded")?.values, ["merged with others", "as its own row", "expanded, like Ctrl+O"]);
-    assert.equal(byId.get("keepActiveToolsExpanded")?.currentValue, "expanded, like Ctrl+O");
+    assert.deepEqual(byId.get("keepActiveToolsExpanded")?.values, ["no, merge with others", "no, keep on its own row", "yes, like Ctrl+O"]);
+    assert.equal(byId.get("keepActiveToolsExpanded")?.currentValue, "yes, like Ctrl+O");
     assert.deepEqual(byId.get("toolLingerSeconds")?.values, ["0s", "1s", "2s", "3s", "5s", "10s"]);
     assert.equal(byId.get("thinkingLingerSeconds")?.currentValue, "3s");
     assert.equal(items({ ...DEFAULTS, keepActiveToolsExpanded: true, toolLingerSeconds: 7 }).find((item) => item.id === "toolLingerSeconds")?.currentValue, "7s");
@@ -229,7 +275,7 @@ describe("config screen contents", () => {
 
     const changes: [string, unknown][] = [];
     const list = screen(new Config(DEFAULTS), (key, value) => changes.push([key, value]));
-    list.onChange("keepActiveToolsExpanded", "expanded, like Ctrl+O");
+    list.onChange("keepActiveToolsExpanded", "yes, like Ctrl+O");
     list.onChange("toolLingerSeconds", "10s");
     assert.deepEqual(changes, [["keepActiveToolsExpanded", "expanded"], ["toolLingerSeconds", 10]]);
   });
@@ -294,7 +340,7 @@ describe("presets in the config screen", () => {
     assert.equal(config.get("groupToolRuns"), true);
   });
 
-  it("greys only the four look rows under a preset: activating one changes nothing", () => {
+  it("greys only the look rows under a preset: activating one changes nothing", () => {
     const config = new Config({ ...DEFAULTS, preset: "lite", groupToolRuns: true, timer: false });
     const changes: unknown[] = [];
     const list = screen(config, (k, v) => changes.push([k, v]));
@@ -331,9 +377,10 @@ describe("presets in the config screen", () => {
 
   it("status marks preset-controlled rows", () => {
     const text = summary(new Config({ ...DEFAULTS, preset: "lite" }).all());
-    assert.match(text, /Compact output blocks into rows\s+on \(from preset\)/);
+    assert.match(text, /Shrink output blocks to one line\s+on \(from preset\)/);
+    assert.match(text, /├─ Shrink tool call output\s+on \(from preset\)/, "tree guides like on the screen");
     assert.match(text, /Show running time on tool calls\s+on\n/, "not a look row");
-    assert.match(text, /lite\n\n  Symbol set/, "sections are separated like on the screen");
+    assert.match(text, /lite\n\n  ── Appearance\n  Symbol set/, "section titles like on the screen");
   });
 });
 
@@ -441,9 +488,9 @@ describe("excluded tools picker", () => {
   it("lists every known tool, sorted, with a search box and the current state", () => {
     const { picker } = open(["web_search"], ["web_search", "read", "bash"]);
     assert.deepEqual(picker.items.map((i) => [i.id, i.currentValue]), [
-      ["bash", "compact"],
-      ["read", "compact"],
-      ["web_search", "excluded"],
+      ["bash", "one line"],
+      ["read", "one line"],
+      ["web_search", "own card"],
     ]);
     assert.deepEqual(picker.options, { enableSearch: true });
   });
@@ -451,20 +498,20 @@ describe("excluded tools picker", () => {
   it("keeps an excluded name that no loaded tool carries", () => {
     const { picker } = open(["gone"], ["read"]);
     const gone = picker.items.find((i) => i.id === "gone")!;
-    assert.equal(gone.currentValue, "excluded");
+    assert.equal(gone.currentValue, "own card");
     assert.match(gone.description!, /Not loaded/);
   });
 
   it("reports the full new list on every toggle", () => {
     const { picker, excluded } = open(["a"], ["a", "b"]);
-    picker.onChange("b", "excluded");
-    picker.onChange("a", "compact");
+    picker.onChange("b", "own card");
+    picker.onChange("a", "one line");
     assert.deepEqual(excluded, [["a", "b"], ["b"]]);
   });
 
   it("closes with the new summary on Escape", () => {
     const { picker, closed } = open([], ["a"]);
-    picker.onChange("a", "excluded");
+    picker.onChange("a", "own card");
     picker.onCancel();
     assert.deepEqual(closed, ["a"]);
   });

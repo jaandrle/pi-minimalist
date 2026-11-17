@@ -32,11 +32,11 @@ Restart Pi, and tool calls appear as compact rows. No configuration needed.
 
 ## Choose how quiet you want it
 
-Run **`/minimalist`** to change settings live. The settings come in three sections, and a sub-setting shows only while the setting above it is on:
+Run **`/minimalist`** to change settings live. The settings come in three titled sections. Tree lines show which setting depends on which, and a sub-setting shows only while the setting above it is on:
 
 - **Appearance**: the symbol set (Unicode or ASCII), the coloured bar left of each row, and the running time on tool calls.
-- **Compact output blocks into rows**: tool calls and thinking as one-line rows. Under it, choose which tools keep their own card (**Excluded tools**: type to search, press Enter on a tool to flip it), how a running tool call shows (merged with others, on its own row, or expanded like Ctrl+O), and whether thinking is expanded while it is generated. Both can keep that view for a few seconds after they end (3s by default).
-- **Merge consecutive rows into one** summary, such as `read ×2, edit ×1`. Under it, **Show only the final reply** keeps the latest reply in focus and folds everything before it into elapsed work time or tool counts. **Apply only to earlier turns** keeps the current turn fully visible until your next prompt.
+- **One-line rows**: **Shrink output blocks to one line** draws tool calls and thinking as one-line rows. Under it, choose which tools keep their own card (**Excluded tools**: type to search, press Enter on a tool to flip it), how a running tool call shows (merged with others, on its own row, or expanded like Ctrl+O), and, under **Shrink thinking output**, whether thinking is expanded while it is generated. Both can keep that view for a few seconds after they end (3s by default).
+- **Merging rows**: **Merge consecutive rows into one** folds them into one summary, such as `read ×2, edit ×1`. Under it, **Show only the final reply** keeps the latest reply in focus and folds everything before it into elapsed work time or tool counts. **Apply only to earlier turns** keeps the current turn fully visible until your next prompt.
 
 When you turn a setting off, the choices under it are kept and come back when you turn it on again.
 
@@ -44,7 +44,7 @@ A fresh install starts on the **`full`** preset (see below): compact tool rows, 
 
 ### Presets
 
-The **Preset** row at the top of `/minimalist` sets five options at once: **Compact output blocks into rows**, **Compact tool call blocks**, **Compact thinking blocks**, **Merge consecutive rows into one** and **Show only the final reply**.
+The **Preset** row at the top of `/minimalist` sets five options at once: **Shrink output blocks to one line**, **Shrink tool call output**, **Shrink thinking output**, **Merge consecutive rows into one** and **Show only the final reply**.
 
 | Preset | What you get |
 | --- | --- |
@@ -56,7 +56,7 @@ The **Preset** row at the top of `/minimalist` sets five options at once: **Comp
 
 <img src="docs/presets.png" width="600" alt="Clicking a folded line opens it into rows; clicking one row expands only that row">
 
-A preset never overwrites your settings. While `off`, `lite`, `full` or `max` is selected, only those five rows are greyed out and show the preset's values; pressing Enter on one does nothing. Every other option (the appearance settings, Show a running tool call and so on) stays yours and stays editable, as long as the setting above it is on (a preset that turns a row off also hides the settings under it). Your own values are kept and come back when you choose `custom`. The first time you choose `custom`, it starts from `lite`.
+A preset never overwrites your settings. While `off`, `lite`, `full` or `max` is selected, only those five rows are greyed out and show the preset's values; pressing Enter on one does nothing. Every other option (the appearance settings, Expand ongoing tool call and so on) stays yours and stays editable, as long as the setting above it is on (a preset that turns a row off also hides the settings under it). Your own values are kept and come back when you choose `custom`. The first time you choose `custom`, it starts from `lite`.
 
 **Upgrading:** if your settings already contain a `minimalist` block, you stay on `custom` and keep your values. One rule is new: a setting under one that is off is ignored, for example **Show only the final reply** while **Merge consecutive rows into one** is off. Only a user with no `minimalist` settings at all starts on `full`, which makes thinking rows compact. To pick another look, change **Preset**.
 
@@ -73,7 +73,7 @@ Settings apply to existing conversation history and are saved globally. If a sym
 
 ## Go back to Pi's usual view
 
-Turn off **Compact output blocks into rows** to restore native tool cards and thinking, or **Compact tool call blocks** for tool cards only. Or choose the `off` preset.
+Turn off **Shrink output blocks to one line** to restore native tool cards and thinking, or **Shrink tool call output** for tool cards only. Or choose the `off` preset.
 
 To disable the extension completely, run `pi config`, disable pi-minimalist, and restart Pi
 

@@ -34,11 +34,11 @@ Redémarrez Pi : les appels d'outils s'affichent en lignes compactes. Aucune con
 
 ## Choisir le niveau de discrétion
 
-Lancez **`/minimalist`** pour modifier les réglages en direct. Les réglages sont rangés en trois sections ; un sous-réglage n'apparaît que lorsque le réglage au-dessus de lui est activé :
+Lancez **`/minimalist`** pour modifier les réglages en direct. Les réglages sont rangés en trois sections titrées. Des lignes en arbre montrent quel réglage dépend de quel autre, et un sous-réglage n'apparaît que lorsque le réglage au-dessus de lui est activé :
 
 - **Apparence** : le jeu de symboles (Unicode ou ASCII), la barre colorée à gauche de chaque ligne et la durée d'exécution des appels d'outils.
-- **Compact output blocks into rows** (réduire les blocs de sortie en lignes) : appels d'outils et réflexion sur une seule ligne. En dessous, choisissez quels outils gardent leur propre carte (**Excluded tools** : tapez pour chercher, puis Entrée sur un outil pour le basculer), comment s'affiche un appel d'outil en cours (fusionné avec les autres, sur sa propre ligne, ou déplié comme avec Ctrl+O), et si la réflexion est dépliée pendant sa génération. Les deux peuvent garder cet affichage quelques secondes après la fin (3 s par défaut).
-- **Merge consecutive rows into one** (fusionner les lignes consécutives) en un seul résumé, par exemple `read ×2, edit ×1`. En dessous, **Show only the final reply** (n'afficher que la réponse finale) garde la dernière réponse au premier plan et replie tout ce qui la précède en temps de travail ou en nombre d'outils. **Apply only to earlier turns** (seulement pour les tours précédents) garde le tour en cours entièrement visible jusqu'à votre prochain prompt.
+- **One-line rows** (affichage sur une ligne) : **Shrink output blocks to one line** affiche les appels d'outils et la réflexion sur une seule ligne. En dessous, choisissez quels outils gardent leur propre carte (**Excluded tools** : tapez pour chercher, puis Entrée sur un outil pour le basculer), comment s'affiche un appel d'outil en cours (fusionné avec les autres, sur sa propre ligne, ou déplié comme avec Ctrl+O), et, sous **Shrink thinking output**, si la réflexion est dépliée pendant sa génération. Les deux peuvent garder cet affichage quelques secondes après la fin (3 s par défaut).
+- **Merging rows** (fusion des lignes) : **Merge consecutive rows into one** les fusionne en un seul résumé, par exemple `read ×2, edit ×1`. En dessous, **Show only the final reply** (n'afficher que la réponse finale) garde la dernière réponse au premier plan et replie tout ce qui la précède en temps de travail ou en nombre d'outils. **Apply only to earlier turns** (seulement pour les tours précédents) garde le tour en cours entièrement visible jusqu'à votre prochain prompt.
 
 Quand vous désactivez un réglage, les choix en dessous sont conservés et reviennent quand vous le réactivez.
 
@@ -46,7 +46,7 @@ Une nouvelle installation démarre avec le préréglage **`full`** (voir plus ba
 
 ### Préréglages
 
-La ligne **Preset** en haut de `/minimalist` règle cinq options à la fois : **Compact output blocks into rows**, **Compact tool call blocks**, **Compact thinking blocks**, **Merge consecutive rows into one** et **Show only the final reply**.
+La ligne **Preset** en haut de `/minimalist` règle cinq options à la fois : **Shrink output blocks to one line**, **Shrink tool call output**, **Shrink thinking output**, **Merge consecutive rows into one** et **Show only the final reply**.
 
 | Préréglage | Ce que vous obtenez |
 | --- | --- |
@@ -58,7 +58,7 @@ La ligne **Preset** en haut de `/minimalist` règle cinq options à la fois : **
 
 <img src="docs/presets.png" width="600" alt="L'écran de choix du préréglage">
 
-Un préréglage n'écrase jamais vos réglages. Tant que `off`, `lite`, `full` ou `max` est sélectionné, seules ces cinq lignes sont grisées et affichent les valeurs du préréglage ; appuyer sur Entrée dessus ne fait rien. Toutes les autres options (les réglages d'apparence, Show a running tool call, etc.) restent à vous et restent modifiables, tant que le réglage au-dessus est activé (un préréglage qui désactive une ligne masque aussi les réglages en dessous). Vos propres valeurs sont conservées et reviennent quand vous choisissez `custom`. La première fois que vous choisissez `custom`, il part de `lite`.
+Un préréglage n'écrase jamais vos réglages. Tant que `off`, `lite`, `full` ou `max` est sélectionné, seules ces cinq lignes sont grisées et affichent les valeurs du préréglage ; appuyer sur Entrée dessus ne fait rien. Toutes les autres options (les réglages d'apparence, Expand ongoing tool call, etc.) restent à vous et restent modifiables, tant que le réglage au-dessus est activé (un préréglage qui désactive une ligne masque aussi les réglages en dessous). Vos propres valeurs sont conservées et reviennent quand vous choisissez `custom`. La première fois que vous choisissez `custom`, il part de `lite`.
 
 **Mise à jour :** si vos réglages contiennent déjà un bloc `minimalist`, vous restez sur `custom` et gardez vos valeurs. Une seule règle est nouvelle : un réglage placé sous un réglage désactivé est ignoré, par exemple **Show only the final reply** quand **Merge consecutive rows into one** est désactivé. Seul un utilisateur sans aucun réglage `minimalist` démarre sur `full`, ce qui rend les lignes de réflexion compactes. Pour choisir un autre aspect, changez **Preset**.
 
@@ -75,7 +75,7 @@ Les réglages s'appliquent à l'historique existant et sont enregistrés globale
 
 ## Revenir à l'affichage habituel de Pi
 
-Désactivez **Compact output blocks into rows** pour retrouver les cartes d'outils et la réflexion natives, ou seulement **Compact tool call blocks** pour les cartes d'outils. Ou choisissez le préréglage `off`.
+Désactivez **Shrink output blocks to one line** pour retrouver les cartes d'outils et la réflexion natives, ou seulement **Shrink tool call output** pour les cartes d'outils. Ou choisissez le préréglage `off`.
 
 Pour désactiver complètement l'extension, lancez `pi config`, désactivez pi-minimalist, puis redémarrez Pi.
 

@@ -65,14 +65,20 @@ are ignored, because `coerce` reads only known keys.
 
 `/minimalist` (alias `config`) opens an editor on pi-tui's `SettingsList`;
 `/minimalist status` prints the state. The keys above the blank line are
-in the editor, in `FIELDS` order and in sections (preset, appearance, compact
-rows, merging); a blank line drawn above each `section` row separates them.
-`SettingsList` has no separator rows, so `createConfigScreen` inserts the blank
-lines after rendering and moves mouse `y` back past them (a click on a blank
-line is ignored). The picker submenu gets no blank lines.
+in the editor, in `FIELDS` order and in sections; a row with a `section` title
+starts one (Appearance, One-line rows, Merging rows), drawn as a blank line plus
+a hint-coloured `── Title ───` rule. Sub-settings carry tree guides (`├─`, `└─`,
+`│`; `|-`, `` `- ``, `|` in ASCII), computed from row depths by `treeGuides()`.
+The wrapped `theme.label` paints the guide in `hint` and only the name in the
+label colour: one coloured string would end the selected row's highlight at the
+guide's colour reset.
+`SettingsList` has no separator rows, so `createConfigScreen` inserts the two
+title lines after rendering and moves mouse `y` back past them (a click on a
+title line is ignored). The picker submenu gets no titles. Labels plus guides
+must stay within 36 columns (`SettingsList`'s label column), or values misalign.
 
 **Sub-settings.** `PARENTS` (config.ts) names the setting each sub-setting depends
-on. The editor indents a sub-setting one step per level and shows it only while
+on. The editor draws a sub-setting under its parent and shows it only while
 every parent above it is on; it rebuilds the list after every change. `Config`
 reads a BOOLEAN sub-setting as off while its parent is off (`layer()`), so
 hiding a row also disables it (`keepActiveToolsExpanded` too: its default is a
@@ -81,11 +87,11 @@ back with the parent. A setting goes into `PARENTS` only when it is useless
 without its parent: `keepActiveThinkingExpanded` hangs off `thinkingAsToolCall`
 (off = Pi's native thinking, which Ctrl+T controls).
 
-The "Excluded tools" row sits under "Compact tool call blocks" and opens a submenu
+The "Excluded tools" row sits under "Shrink tool call output" and opens a submenu
 (a second `SettingsList` with `enableSearch`) listing every tool from
-`pi.getAllTools()`, read when it opens; Enter flips a tool between `compact` and
-`excluded`. Names in `excludeTools` that no loaded tool carries stay listed, so
-opening the picker never forgets them. `glyphs` and `tokens` are JSON-only: they
+`pi.getAllTools()`, read when it opens; Enter flips a tool between `one line` and
+`own card` (stored in `excludeTools`). Names in `excludeTools` that no loaded
+tool carries stay listed, so opening the picker never forgets them. `glyphs` and `tokens` are JSON-only: they
 need knowledge of Pi's palette. Default symbols are plain Unicode (no Nerd Font);
 `glyphStyle: "ascii"` uses one-column symbols only.
 
