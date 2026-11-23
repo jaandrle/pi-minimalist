@@ -335,7 +335,7 @@ export function createConfigScreen(deps: ConfigScreenDeps): InputComponent {
   list = build();
   return {
     render: (width) => {
-      const lines = list.render(width);
+      const lines = [...list.render(width)];
       const { rule } = guideStyle(config.get("glyphStyle"));
       for (const index of sections().reverse()) {
         lines.splice(index, 0, "", sectionTitle(SECTIONS.get(rows[index].id)!, rule, width, theme.hint));
