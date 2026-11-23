@@ -21,6 +21,7 @@
  */
 
 import type { Component } from "@earendil-works/pi-tui";
+import { Container } from "@earendil-works/pi-tui";
 import { readBridge as bridge, type Bridge } from "./bridge.ts";
 import { EmptyComponent, FoldableProse } from "./components.ts";
 import type { ThemeLike } from "./row.ts";
@@ -53,25 +54,47 @@ function once(target: object, name: string, apply: () => void): void {
 // each patch function keeps its precise internal shape for the body below.
 // ---------------------------------------------------------------------------
 
+/**
+ * Pi-Bolt's bundled Pi (built 2026-11-21, still labelled 1.6.0) replaced the
+ * three eager shell fields + `hasRendererDefinition()`/`getRenderShell()` with a
+ * lazily created `shell` descriptor (`addShell()` → `{ kind, container | text }`).
+ * `String(proto.addShell)` impossible (minified), so detect the shape by the
+ * METHOD ITSELF and keep every access behind the matching branch.
+ */
+type BoltShell = { kind: "fallback" | "self" | "default"; container?: Component; text?: unknown };
+
 type ToolExecutionProto = {
   toolName: string;
   toolCallId: string;
   toolDefinition?: { renderCall?: unknown; renderResult?: unknown; renderShell?: string };
   children: Component[];
-  contentBox: Component;
-  contentTextRegion: Component;
-  selfRenderContainer: Component;
+  contentBox?: Component;
+  contentTextRegion?: Component;
+  selfRenderContainer?: Component;
+  /** Pi-Bolt shape only; `addShell()` fills it on demand. */
+  shell?: BoltShell;
+  addShell?(): BoltShell;
   callRendererComponent?: Component;
   resultRendererComponent?: Component;
   rendererState: { callLine?: unknown; originalResult?: unknown };
   updateDisplay(): void;
   getCallRenderer(): unknown;
   getResultRenderer(): unknown;
-  hasRendererDefinition(): boolean;
-  getRenderShell(): string;
+  hasRendererDefinition?(): boolean;
+  getRenderShell?(): string;
   createResultFallback(): Component | undefined;
   render(width: number): string[];
 };
+
+/** /reload can replace the CompactLine class while this wrapper survives. */
+function dropRendererState(self: ToolExecutionProto): void {
+  const callLine = self.rendererState.callLine as { stopTicker?: () => void } | undefined;
+  if (typeof callLine?.stopTicker === "function") callLine.stopTicker();
+  delete self.rendererState.callLine;
+  delete self.rendererState.originalResult;
+  self.callRendererComponent = undefined;
+  self.resultRendererComponent = undefined;
+}
 
 /**
  * Give the compact renderer priority and normalize the self-shell spacer when a
@@ -89,6 +112,10 @@ export function patchToolExecution(proto: ToolExecutionProto): void {
   const nativeResultFallback = proto.createResultFallback;
   const nativeRender = proto.render;
   const nativeUpdateDisplay = proto.updateDisplay;
+  const nativeAddShell = proto.addShell;
+  const nativeHasDefinition = proto.hasRendererDefinition;
+  // Pi-Bolt's bundled Pi has `addShell()` and no `hasRendererDefinition()`.
+  const bolt = typeof nativeAddShell === "function" && typeof nativeHasDefinition !== "function";
 
   /**
    * "Ours" when the bridge claims this tool name — and ONLY then.
@@ -108,25 +135,44 @@ export function patchToolExecution(proto: ToolExecutionProto): void {
     // Pi attaches exactly one shell after its leading spacer in the constructor.
     // Its getters change live, but updateDisplay() never replaces that child.
     const ownership = new WeakMap<ToolExecutionProto, boolean>();
+    // Pi-Bolt shape: the shell we swap out is put back on unclaim (settings
+    // toggle, /reload). Children order is [spacer, shell, ...images].
+    const boltSaved = new WeakMap<ToolExecutionProto, { shell: BoltShell; child: Component }>();
     function syncShell(this: ToolExecutionProto): boolean {
       const claimed = claims.call(this) !== undefined;
       // A card we do not draw is still visible: let it cut folded runs.
       if (!claimed && this.toolCallId) barrier(this.toolCallId);
-      const shell = this.hasRendererDefinition()
-        ? this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox
-        : this.contentTextRegion;
+      if (bolt) {
+        // Native lazily creates spacer + shell on the first updateDisplay(),
+        // which is already wrapped — so create them here, then swap if ours.
+        if (!this.shell) nativeAddShell?.call(this);
+        const previous = ownership.get(this);
+        if (previous === claimed) return false;
+        if (previous !== undefined) dropRendererState(this);
+        ownership.set(this, claimed);
+        if (claimed) {
+          boltSaved.set(this, { shell: this.shell!, child: this.children[1] });
+          const ours: BoltShell = { kind: "self", container: new Container() };
+          this.shell = ours;
+          this.children[1] = ours.container!;
+        } else {
+          const saved = boltSaved.get(this);
+          if (saved) {
+            this.shell = saved.shell;
+            this.children[1] = saved.child;
+          }
+        }
+        return true;
+      }
+      const shell = this.hasRendererDefinition?.()
+        ? this.getRenderShell?.() === "self" ? this.selfRenderContainer! : this.contentBox!
+        : this.contentTextRegion!;
       const previous = ownership.get(this);
       ownership.set(this, claimed);
       if (previous === claimed && this.children[1] === shell) return false;
 
       if (previous !== undefined) {
-        // /reload can replace the CompactLine class while this wrapper survives.
-        const callLine = this.rendererState.callLine as { stopTicker?: () => void } | undefined;
-        if (typeof callLine?.stopTicker === "function") callLine.stopTicker();
-        delete this.rendererState.callLine;
-        delete this.rendererState.originalResult;
-        this.callRendererComponent = undefined;
-        this.resultRendererComponent = undefined;
+        dropRendererState(this);
       }
       // Keep the spacer first and Pi's existing image/spacer children after the
       // shell; native updateDisplay() refreshes their content on this same pass.
@@ -160,17 +206,19 @@ export function patchToolExecution(proto: ToolExecutionProto): void {
     };
 
     // A handled tool always has a renderer, so core must never treat the row as
-    // definition-less and fall back to the verbose JSON card.
-    const nativeHasDefinition = proto.hasRendererDefinition;
+    // definition-less and fall back to the verbose JSON card. Pi-Bolt's build
+    // dropped this method entirely: install the override only when it exists.
     proto.hasRendererDefinition = function (this: ToolExecutionProto) {
-      return nativeHasDefinition.call(this) || claims.call(this) !== undefined;
+      return nativeHasDefinition?.call(this) || claims.call(this) !== undefined;
     };
 
     const nativeRenderShell = proto.getRenderShell;
-    proto.getRenderShell = function () {
-      const renderer = claims.call(this);
-      return renderer?.renderShell ?? nativeRenderShell.call(this);
-    };
+    if (typeof nativeRenderShell === "function") {
+      proto.getRenderShell = function () {
+        const renderer = claims.call(this);
+        return renderer?.renderShell ?? nativeRenderShell.call(this);
+      };
+    }
 
     proto.render = function (width: number) {
       // A settings toggle may only request a repaint, not an updateDisplay().
@@ -295,6 +343,15 @@ export function patchAssistantMessage(proto: AssistantProto): void {
       const savedOverrides = this.thinkingVisibilityOverrides;
       const b = bridge();
       const keepOpen = b?.keepActiveThinkingExpanded() === true;
+      const compact = compactThinking();
+      const previousCompact = compactState.get(this);
+      if (previousCompact !== undefined && previousCompact !== compact && (this as any).markdownSlots) {
+        // Pi >= 1.6.0 reuses Markdown components across updateContent() calls
+        // (`markdownSlots`), so rebuilding after a settings transition would
+        // otherwise keep our recolored instances alive. Drop the cache: native
+        // code recreates them with its own theme.
+        (this as any).markdownSlots = [];
+      }
       if (isStreaming) streamed.add(this);
       else if (streamed.delete(this) && keepOpen && b) {
         const scheduled = b.afterThinkingLinger(() => {
@@ -316,9 +373,9 @@ export function patchAssistantMessage(proto: AssistantProto): void {
         this.hideThinkingBlock = savedHide;
         this.thinkingVisibilityOverrides = savedOverrides;
       }
-      const compact = compactThinking();
-      decorateThinking(this, message, isStreaming, compact);
-      compactState.set(this, compact);
+      const compactNow = compactThinking();
+      decorateThinking(this, message, isStreaming, compactNow);
+      compactState.set(this, compactNow);
     };
 
     proto.render = function (width: number) {
@@ -508,8 +565,8 @@ export function patchCore(core: {
   const proto = (target: unknown) => (target as { prototype: any } | undefined)?.prototype;
   const tool = proto(core.ToolExecutionComponent);
   const assistant = proto(core.AssistantMessageComponent);
-  if (tool) patchToolExecution(tool);
+  if (tool && typeof (tool as any).updateDisplay === "function") patchToolExecution(tool);
   if (assistant) patchAssistantMessage(assistant);
   const user = proto(core.UserMessageComponent);
-  if (user) patchUserMessage(user);
+  if (user && typeof (user as any).rebuild === "function") patchUserMessage(user);
 }

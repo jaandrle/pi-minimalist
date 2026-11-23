@@ -72,7 +72,7 @@ function install(
   return shared;
 }
 
-const linesOf = (item: { render(width: number): string[] }, width = 80) =>
+const linesOf = (item: { render(width: number): readonly string[] }, width = 80) =>
   item.render(width).map(plain).map((line: string) => line.trimEnd());
 const textOf = (item: { render(width: number): string[] }) => item.render(80).map(plain).join("\n");
 
