@@ -57,9 +57,15 @@ function once(target: object, name: string, apply: () => void): void {
 /**
  * Pi-Bolt's bundled Pi (built 2026-11-21, still labelled 1.6.0) replaced the
  * three eager shell fields + `hasRendererDefinition()`/`getRenderShell()` with a
- * lazily created `shell` descriptor (`addShell()` → `{ kind, container | text }`).
- * `String(proto.addShell)` impossible (minified), so detect the shape by the
- * METHOD ITSELF and keep every access behind the matching branch.
+ * lazily created `shell` descriptor (`addShell()` → `{ kind, container | text }`),
+ * and turned the eager fields into GETTERS that mount on first touch. Its
+ * later builds (pi-bolt 1.3.1, built 2026-11-24) restored
+ * `hasRendererDefinition()` on top of the same descriptor shape, so
+ * `String(proto.addShell)` impossible (minified), detect the shape by the
+ * METHOD ITSELF and keep every access behind the matching branch: a
+ * legacy-branch read of `selfRenderContainer` re-enters the wrapped
+ * `updateDisplay()` while `argsPending` is set and never settles (the
+ * nested pass runs before the native body clears the flag).
  */
 type BoltShell = { kind: "fallback" | "self" | "default"; container?: Component; text?: unknown };
 
@@ -114,8 +120,11 @@ export function patchToolExecution(proto: ToolExecutionProto): void {
   const nativeUpdateDisplay = proto.updateDisplay;
   const nativeAddShell = proto.addShell;
   const nativeHasDefinition = proto.hasRendererDefinition;
-  // Pi-Bolt's bundled Pi has `addShell()` and no `hasRendererDefinition()`.
-  const bolt = typeof nativeAddShell === "function" && typeof nativeHasDefinition !== "function";
+  // The descriptor shape exists wherever `addShell()` does. Both Pi-Bolt
+  // builds use it — the early one without `hasRendererDefinition()`, pi-bolt
+  // 1.3.1 with the method restored — and only older Pi has eager shell fields
+  // and no `addShell()`.
+  const bolt = typeof nativeAddShell === "function";
 
   /**
    * "Ours" when the bridge claims this tool name — and ONLY then.
@@ -138,46 +147,60 @@ export function patchToolExecution(proto: ToolExecutionProto): void {
     // Pi-Bolt shape: the shell we swap out is put back on unclaim (settings
     // toggle, /reload). Children order is [spacer, shell, ...images].
     const boltSaved = new WeakMap<ToolExecutionProto, { shell: BoltShell; child: Component }>();
+    // Re-entrancy marker: a lazy-shell getter (`selfRenderContainer` →
+    // `mountedShell()` → `applyDeferred()` → `applyPendingArgs()`) synchronously
+    // calls the wrapped `updateDisplay()` whenever `argsPending` is set, and
+    // the native body that clears the flag runs only after this pass — without
+    // the marker each nesting reads the getter again, forever. The nested pass
+    // must not swap the shell mid-mount anyway, so "unchanged" is both the fix
+    // and the right answer.
+    const syncing = new WeakSet<ToolExecutionProto>();
     function syncShell(this: ToolExecutionProto): boolean {
-      const claimed = claims.call(this) !== undefined;
-      // A card we do not draw is still visible: let it cut folded runs.
-      if (!claimed && this.toolCallId) barrier(this.toolCallId);
-      if (bolt) {
-        // Native lazily creates spacer + shell on the first updateDisplay(),
-        // which is already wrapped — so create them here, then swap if ours.
-        if (!this.shell) nativeAddShell?.call(this);
-        const previous = ownership.get(this);
-        if (previous === claimed) return false;
-        if (previous !== undefined) dropRendererState(this);
-        ownership.set(this, claimed);
-        if (claimed) {
-          boltSaved.set(this, { shell: this.shell!, child: this.children[1] });
-          const ours: BoltShell = { kind: "self", container: new Container() };
-          this.shell = ours;
-          this.children[1] = ours.container!;
-        } else {
-          const saved = boltSaved.get(this);
-          if (saved) {
-            this.shell = saved.shell;
-            this.children[1] = saved.child;
+      if (syncing.has(this)) return false;
+      syncing.add(this);
+      try {
+        const claimed = claims.call(this) !== undefined;
+        // A card we do not draw is still visible: let it cut folded runs.
+        if (!claimed && this.toolCallId) barrier(this.toolCallId);
+        if (bolt) {
+          // Native lazily creates spacer + shell on the first updateDisplay(),
+          // which is already wrapped — so create them here, then swap if ours.
+          if (!this.shell) nativeAddShell?.call(this);
+          const previous = ownership.get(this);
+          if (previous === claimed) return false;
+          if (previous !== undefined) dropRendererState(this);
+          ownership.set(this, claimed);
+          if (claimed) {
+            boltSaved.set(this, { shell: this.shell!, child: this.children[1] });
+            const ours: BoltShell = { kind: "self", container: new Container() };
+            this.shell = ours;
+            this.children[1] = ours.container!;
+          } else {
+            const saved = boltSaved.get(this);
+            if (saved) {
+              this.shell = saved.shell;
+              this.children[1] = saved.child;
+            }
           }
+          return true;
         }
-        return true;
-      }
-      const shell = this.hasRendererDefinition?.()
-        ? this.getRenderShell?.() === "self" ? this.selfRenderContainer! : this.contentBox!
-        : this.contentTextRegion!;
-      const previous = ownership.get(this);
-      ownership.set(this, claimed);
-      if (previous === claimed && this.children[1] === shell) return false;
+        const shell = this.hasRendererDefinition?.()
+          ? this.getRenderShell?.() === "self" ? this.selfRenderContainer! : this.contentBox!
+          : this.contentTextRegion!;
+        const previous = ownership.get(this);
+        ownership.set(this, claimed);
+        if (previous === claimed && this.children[1] === shell) return false;
 
-      if (previous !== undefined) {
-        dropRendererState(this);
+        if (previous !== undefined) {
+          dropRendererState(this);
+        }
+        // Keep the spacer first and Pi's existing image/spacer children after the
+        // shell; native updateDisplay() refreshes their content on this same pass.
+        this.children[1] = shell;
+        return true;
+      } finally {
+        syncing.delete(this);
       }
-      // Keep the spacer first and Pi's existing image/spacer children after the
-      // shell; native updateDisplay() refreshes their content on this same pass.
-      this.children[1] = shell;
-      return true;
     }
 
     proto.updateDisplay = function () {
@@ -206,8 +229,9 @@ export function patchToolExecution(proto: ToolExecutionProto): void {
     };
 
     // A handled tool always has a renderer, so core must never treat the row as
-    // definition-less and fall back to the verbose JSON card. Pi-Bolt's build
-    // dropped this method entirely: install the override only when it exists.
+    // definition-less and fall back to the verbose JSON card. Early Pi-Bolt
+    // builds dropped the native method entirely — `nativeHasDefinition?.call`
+    // keeps the override correct on those and on builds that restored it.
     proto.hasRendererDefinition = function (this: ToolExecutionProto) {
       return nativeHasDefinition?.call(this) || claims.call(this) !== undefined;
     };
